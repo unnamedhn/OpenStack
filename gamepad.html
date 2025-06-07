@@ -59,7 +59,7 @@
       user-select: none;
     }
 
-    /* Debug log area at bottom */
+    /* (Optional) Debug log area at bottom */
     #logArea {
       position: absolute;
       bottom: 0;
@@ -71,8 +71,8 @@
       line-height: 1.1;
       padding: 0.5em;
       box-sizing: border-box;
-      display: block;
-      /* Enable for debugging */
+      display: none;
+      /* Change to “block” to see debug logs */
     }
 
     #logArea div {
@@ -89,7 +89,7 @@
   </div>
 
   <!-- Photon Realtime JS SDK v4.3.2 -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/photon/4.3.2/photon.min.js"></script>
+  <script src="lib/photon.js"></script>
   <script>
     (function () {
       //────────────────────────────────────────────────────────────────────────
@@ -98,16 +98,11 @@
       function logDebug(msg, ...args) {
         console.log(msg, ...args);
         const logArea = document.getElementById("logArea");
-        if (logArea && logArea.style.display === "block") {
+        if (logArea.style.display === "block") {
           const line = document.createElement("div");
           line.textContent = "[JS] " + msg + (args.length ? " " + args.join(" ") : "");
           logArea.appendChild(line);
           logArea.scrollTop = logArea.scrollHeight;
-
-          // Keep only last 50 lines
-          while (logArea.children.length > 50) {
-            logArea.removeChild(logArea.firstChild);
-          }
         }
       }
 
@@ -136,276 +131,130 @@
         return;
       }
 
-      logDebug("Initializing with params:", { appId: appIdParam, room: roomParam, player: playerIndex });
+      //────────────────────────────────────────────────────────────────────────
+      // 3) Instantiate LoadBalancingClient with secure WSS and disable auto‐lobby
+      //────────────────────────────────────────────────────────────────────────
+      const client = new Photon.LoadBalancing.LoadBalancingClient(
+        Photon.ConnectionProtocol.Wss,  // ← Wss required for HTTPS pages
+        appIdParam,                    // Photon Cloud AppId
+        "1.0"                          // AppVersion (match Unity side)
+      );
+      client.logger = new Photon.Logger("GamepadJS");
+      client.logger.setLevel(Photon.LogLevel.INFO);
+
+      // Disable the built‐in “join default lobby” step
+      client.autoJoinLobby = false;
 
       //────────────────────────────────────────────────────────────────────────
-      // 3) Instantiate LoadBalancingClient with secure WSS
-      //────────────────────────────────────────────────────────────────────────
-      let client;
-      let roomJoinAttempted = false;
-      let connectionTimeout;
-
-      try {
-        client = new Photon.LoadBalancing.LoadBalancingClient(
-          Photon.ConnectionProtocol.Wss,  // ← Wss required for HTTPS pages
-          appIdParam,                    // Photon Cloud AppId
-          "1.0"                          // AppVersion (match Unity side)
-        );
-
-        // Configure logger
-        client.logger = new Photon.Logger("GamepadJS");
-        client.logger.setLevel(Photon.LogLevel.INFO);
-
-        // Disable the built‐in "join default lobby" step
-        client.autoJoinLobby = false;
-
-        logDebug("LoadBalancingClient created successfully");
-      } catch (error) {
-        logDebug("Failed to create LoadBalancingClient:", error);
-        statusText.textContent = "❌ Failed to initialize Photon client";
-        return;
-      }
-
-      //────────────────────────────────────────────────────────────────────────
-      // 4) Connection timeout handler
-      //────────────────────────────────────────────────────────────────────────
-      function setConnectionTimeout() {
-        clearTimeout(connectionTimeout);
-        connectionTimeout = setTimeout(() => {
-          logDebug("Connection timeout - attempting to reconnect...");
-          statusText.textContent = "⏱️ Connection timeout - retrying...";
-
-          // Try to reconnect
-          setTimeout(() => {
-            if (client.state === Photon.LoadBalancing.LoadBalancingClient.State.Disconnected) {
-              logDebug("Attempting reconnection");
-              client.connectToRegionMaster("eu");
-            }
-          }, 2000);
-        }, 15000); // 15 second timeout
-      }
-
-      //────────────────────────────────────────────────────────────────────────
-      // 5) onStateChange: update #statusText with a readable state
+      // 4) onStateChange: update #statusText with a readable state
       //────────────────────────────────────────────────────────────────────────
       client.onStateChange = function (state) {
         const stateName = Photon.LoadBalancing.LoadBalancingClient.StateToName(state);
         let displayText;
 
-        logDebug("State changed to:", stateName, "| State code:", state);
-
         switch (stateName) {
           case "ConnectingToNameServer":
             displayText = "Connecting to NameServer…";
-            setConnectionTimeout();
             break;
           case "ConnectedToNameServer":
             displayText = "Authenticated by NameServer…";
-            clearTimeout(connectionTimeout);
             break;
           case "ConnectingToMasterserver":
             displayText = "Connecting to Master…";
-            setConnectionTimeout();
             break;
           case "ConnectedToMaster":
             displayText = "Connected to Master. Joining Room…";
-            clearTimeout(connectionTimeout);
-            roomJoinAttempted = false; // Reset flag
             break;
           case "Joining":
             displayText = `Joining Room "${roomParam}"…`;
-            setConnectionTimeout();
             break;
           case "JoinedToRoom":
             displayText = `✅ Joined Room "${roomParam}"\nPLAYER ${playerIndex}`;
-            clearTimeout(connectionTimeout);
             break;
           case "Disconnecting":
             displayText = "Disconnecting…";
             break;
           case "Disconnected":
             displayText = "❌ Disconnected";
-            clearTimeout(connectionTimeout);
             break;
           default:
             displayText = stateName;
         }
 
         statusText.textContent = displayText;
-        logDebug("Display updated:", displayText.replace("\n", " | "));
+        logDebug("onStateChange →", stateName, "| Display:", displayText.replace("\n", " | "));
       };
 
       //────────────────────────────────────────────────────────────────────────
-      // 6) onConnectedToMaster: use joinRoom to join or create room
+      // 5) onConnectedToMaster: use opJoinOrCreateRoom(...) to skip lobby
       //────────────────────────────────────────────────────────────────────────
       client.onConnectedToMaster = function () {
-        logDebug("onConnectedToMaster called");
+        logDebug("onConnectedToMaster → calling opJoinOrCreateRoom:", roomParam);
 
-        // Prevent multiple join attempts
-        if (roomJoinAttempted) {
-          logDebug("Room join already attempted, skipping");
-          return;
-        }
+        // Construct RoomOptions exactly as in Unity’s EnterRoomParams
+        const enterParams = {
+          RoomName: roomParam,
+          RoomOptions: new Photon.LoadBalancing.RoomOptions({ MaxPlayers: 10 })
+        };
 
-        roomJoinAttempted = true;
-
-        // Small delay to ensure client is fully ready
-        setTimeout(() => {
-          logDebug("Attempting to join room:", roomParam);
-
-          try {
-            // First try to join existing room
-            const joinSuccess = client.joinRoom(roomParam);
-
-            if (!joinSuccess) {
-              logDebug("Direct joinRoom failed, trying joinOrCreateRoom");
-
-              // If direct join fails, try join or create
-              const joinOrCreateSuccess = client.joinRoom(roomParam, {}, {
-                MaxPlayers: 10,
-                IsVisible: true,
-                IsOpen: true
-              });
-
-              if (!joinOrCreateSuccess) {
-                logDebug("Both joinRoom attempts failed");
-                statusText.textContent = "❌ Failed to initiate room join";
-              }
-            } else {
-              logDebug("Direct joinRoom succeeded");
-            }
-          } catch (error) {
-            logDebug("Exception during room join:", error);
-            statusText.textContent = "❌ Error joining room: " + error.message;
-          }
-        }, 100);
+        client.opJoinOrCreateRoom(enterParams);
       };
 
       //────────────────────────────────────────────────────────────────────────
-      // 7) onJoinRoom: called when successfully joined a room
+      // 6) onJoinedRoom: no extra action needed (status is updated above)
       //────────────────────────────────────────────────────────────────────────
-      client.onJoinRoom = function (createdByMe) {
-        logDebug("onJoinRoom called - joined", roomParam, "createdByMe:", createdByMe);
-        clearTimeout(connectionTimeout);
+      client.onJoinedRoom = function () {
+        logDebug("onJoinedRoom → joined", roomParam);
       };
 
       //────────────────────────────────────────────────────────────────────────
-      // 8) onJoinRoomFailed: handle join failures and try to create room
+      // 7) onJoinRoomFailed: display an error if the join/Create fails
       //────────────────────────────────────────────────────────────────────────
       client.onJoinRoomFailed = function (returnCode, errorMsg) {
         console.error("onJoinRoomFailed(", returnCode, "):", errorMsg);
-        logDebug("onJoinRoomFailed:", returnCode, errorMsg);
-
-        // If room doesn't exist (code 32760), try to create it
-        if (returnCode === 32760) {
-          logDebug("Room doesn't exist, attempting to create:", roomParam);
-
-          try {
-            const createSuccess = client.createRoom(roomParam, {
-              MaxPlayers: 10,
-              IsVisible: true,
-              IsOpen: true
-            });
-
-            if (!createSuccess) {
-              logDebug("createRoom call failed");
-              statusText.textContent = `❌ Failed to create room "${roomParam}"`;
-            } else {
-              logDebug("createRoom call succeeded");
-              statusText.textContent = `Creating room "${roomParam}"...`;
-            }
-          } catch (error) {
-            logDebug("Exception during room creation:", error);
-            statusText.textContent = "❌ Error creating room: " + error.message;
-          }
-        } else {
-          statusText.textContent = `❌ Failed to join "${roomParam}"\nError: ${errorMsg}`;
-        }
+        statusText.textContent =
+          `❌ Failed to join "${roomParam}"\nError: ${errorMsg}`;
       };
 
       //────────────────────────────────────────────────────────────────────────
-      // 9) onCreateRoomFailed: handle room creation failures
-      //────────────────────────────────────────────────────────────────────────
-      client.onCreateRoomFailed = function (returnCode, errorMsg) {
-        console.error("onCreateRoomFailed(", returnCode, "):", errorMsg);
-        logDebug("onCreateRoomFailed:", returnCode, errorMsg);
-        statusText.textContent = `❌ Failed to create "${roomParam}"\nError: ${errorMsg}`;
-      };
-
-      //────────────────────────────────────────────────────────────────────────
-      // 10) onOperationResponse: handle operation responses for debugging
-      //────────────────────────────────────────────────────────────────────────
-      client.onOperationResponse = function (errorCode, errorMsg, code, content) {
-        if (errorCode !== 0) {
-          logDebug("Operation error:", code, "errorCode:", errorCode, "errorMsg:", errorMsg);
-          console.error("Operation error:", code, "errorCode:", errorCode, "errorMsg:", errorMsg);
-
-          // Handle specific operation failures
-          if (code === 227) { // JoinRoom operation
-            logDebug("JoinRoom operation failed, will be handled by onJoinRoomFailed");
-          } else if (code === 227) { // CreateRoom operation
-            logDebug("CreateRoom operation failed, will be handled by onCreateRoomFailed");
-          }
-        } else {
-          logDebug("Operation success:", code);
-        }
-      };
-
-      //────────────────────────────────────────────────────────────────────────
-      // 11) onError: generic error handler
+      // 8) onError: generic error handler
       //────────────────────────────────────────────────────────────────────────
       client.onError = function (errorCode, errorMsg) {
         console.error("Photon Error:", errorCode, errorMsg);
         logDebug("Photon Error:", errorCode, errorMsg);
-
         if (client.state === Photon.LoadBalancing.LoadBalancingClient.State.Disconnected) {
           return;
         }
-
         statusText.textContent = `⚠️ Photon Error: ${errorMsg}`;
       };
 
       //────────────────────────────────────────────────────────────────────────
-      // 12) Connect to the EU region Master server (secure WebSocket)
+      // 9) Connect to the EU region Master server (secure WebSocket)
       //────────────────────────────────────────────────────────────────────────
-      logDebug("Calling connectToRegionMaster('eu')");
-
-      try {
-        client.connectToRegionMaster("eu");
-        logDebug("connectToRegionMaster call successful");
-      } catch (error) {
-        logDebug("connectToRegionMaster failed:", error);
-        statusText.textContent = "❌ Failed to start connection";
-      }
+      logDebug("Calling connectToRegionMaster('eu') …");
+      client.connectToRegionMaster("eu");
 
       //────────────────────────────────────────────────────────────────────────
-      // 13) On tap/click: send RaiseEvent(eventCode=1, content=playerIndex)
+      // 10) On tap/click: send RaiseEvent(eventCode=1, content=playerIndex)
       //      (Only if client.state === JoinedToRoom)
       //────────────────────────────────────────────────────────────────────────
       function sendTap(evt) {
         evt.preventDefault();
 
         if (client.state !== Photon.LoadBalancing.LoadBalancingClient.State.JoinedToRoom) {
-          console.warn("Tap attempted before JoinedToRoom. Current state:",
-            Photon.LoadBalancing.LoadBalancingClient.StateToName(client.state));
-          logDebug("Tap blocked - not in room. State:",
-            Photon.LoadBalancing.LoadBalancingClient.StateToName(client.state));
+          console.warn("Tap attempted before JoinedToRoom.");
           return;
         }
 
-        try {
-          client.raiseEvent(
-            /* eventCode = */ 1,
-            /* content   = */ playerIndex,
-            /* options   = */ new Photon.LoadBalancing.RaiseEventOptions({
-            Receivers: Photon.LoadBalancing.ReceiverGroup.All
-          }),
-            /* sendOpts  = */ new Photon.SendOptions({ Reliability: true })
-          );
-          logDebug("Sent tap (event=1) for player", playerIndex);
-        } catch (error) {
-          logDebug("Error sending tap event:", error);
-        }
+        client.raiseEvent(
+          /* eventCode = */ 1,
+          /* content   = */ playerIndex,
+          /* options   = */ new Photon.LoadBalancing.RaiseEventOptions({
+          Receivers: Photon.LoadBalancing.ReceiverGroup.All
+        }),
+          /* sendOpts  = */ new Photon.SendOptions({ Reliability: true })
+        );
+        logDebug("Sent tap (event=1) for player", playerIndex);
       }
 
       // Hook both touchstart and mousedown for mobile & desktop
@@ -413,20 +262,10 @@
       touchDiv.addEventListener("mousedown", sendTap);
 
       //────────────────────────────────────────────────────────────────────────
-      // 14) Prevent context menu on long‐press
+      // 11) Prevent context menu on long‐press
       //────────────────────────────────────────────────────────────────────────
       window.addEventListener("contextmenu", function (e) {
         e.preventDefault();
-      });
-
-      //────────────────────────────────────────────────────────────────────────
-      // 15) Cleanup on page unload
-      //────────────────────────────────────────────────────────────────────────
-      window.addEventListener("beforeunload", function () {
-        clearTimeout(connectionTimeout);
-        if (client && client.state !== Photon.LoadBalancing.LoadBalancingClient.State.Disconnected) {
-          client.disconnect();
-        }
       });
     })();
   </script>
