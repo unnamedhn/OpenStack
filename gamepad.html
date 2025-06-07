@@ -140,7 +140,7 @@
         "1.0"                          // AppVersion (match Unity side)
       );
       client.logger = new Photon.Logger("GamepadJS");
-      client.logger.setLevel(Photon.LogLevel.INFO);
+      client.logger.setLevel(Photon.LogLevel.All);
 
       // Disable the built‐in “join default lobby” step
       client.autoJoinLobby = false;
@@ -192,10 +192,12 @@
         logDebug("onConnectedToMaster → calling opJoinOrCreateRoom:", roomParam);
 
         // Construct RoomOptions exactly as in Unity’s EnterRoomParams
-        const roomOptions = new Photon.LoadBalancing.RoomOptions();
-        roomOptions.MaxPlayers = 10;
+        const enterParams = {
+          RoomName: roomParam,
+          RoomOptions: new Photon.LoadBalancing.RoomOptions({ MaxPlayers: 10 })
+        };
 
-        client.opJoinOrCreateRoom(roomParam, roomOptions);
+        client.opJoinOrCreateRoom(enterParams);
       };
 
       //────────────────────────────────────────────────────────────────────────
