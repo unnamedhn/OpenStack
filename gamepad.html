@@ -186,15 +186,21 @@
       };
 
       //────────────────────────────────────────────────────────────────────────
-      // 5) Connect to Master server and join/create room
+      // 5) Connection flow handlers
       //────────────────────────────────────────────────────────────────────────
-      client.connect = function () {
-        logDebug("Connecting to region master 'eu'...");
-        return client.connectToRegionMaster("eu");
+
+      // Handle successful connection to NameServer
+      client.onConnectedToNameServer = function () {
+        logDebug("Connected to NameServer, now connecting to region master 'eu'");
+        // Connect to EU region master server
+        const result = client.connectToRegionMaster("eu");
+        if (!result) {
+          console.error("Failed to connect to region master");
+          statusText.textContent = "❌ Failed to connect to region";
+        }
       };
 
-      // Override onConnectedToMaster to join room using correct API
-      const originalOnConnectedToMaster = client.onConnectedToMaster;
+      // Handle successful connection to Master server
       client.onConnectedToMaster = function () {
         logDebug("Connected to Master server, attempting to join/create room:", roomParam);
 
@@ -247,9 +253,17 @@
       };
 
       //────────────────────────────────────────────────────────────────────────
-      // 9) Start connection
+      // 9) Start connection - connect to NameServer first
       //────────────────────────────────────────────────────────────────────────
-      client.connect();
+      logDebug("Starting connection to NameServer...");
+      const connectResult = client.connectToNameServer({
+        region: "eu"
+      });
+
+      if (!connectResult) {
+        console.error("Failed to start connection to NameServer");
+        statusText.textContent = "❌ Failed to start connection";
+      }
 
       //────────────────────────────────────────────────────────────────────────
       // 10) On tap/click: send RaiseEvent(eventCode=1, content=playerIndex)
