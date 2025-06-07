@@ -72,7 +72,7 @@
       padding: 0.5em;
       box-sizing: border-box;
       display: none;
-      /* Change to “block” to see a running JS log */
+      /* Change to “block” to see debug logs */
     }
 
     #logArea div {
@@ -93,7 +93,7 @@
   <script>
     (function () {
       //────────────────────────────────────────────────────────────────────────
-      // 1) Tiny logger for console + optional #logArea
+      // 1) Simple logger: writes to console and (optionally) #logArea
       //────────────────────────────────────────────────────────────────────────
       function logDebug(msg, ...args) {
         console.log(msg, ...args);
@@ -107,9 +107,8 @@
       }
 
       //────────────────────────────────────────────────────────────────────────
-      // 2) Read & validate URL params: appId, room, player
-      //    Example: 
-      //      https://…/gamepad.html?appId=YOUR_APP_ID&room=OpenStackRoom&player=0
+      // 2) Parse & validate URL params: appId, room, player
+      //    Usage: ?appId=YOUR_APP_ID&room=OpenStackRoom&player=0
       //────────────────────────────────────────────────────────────────────────
       const params = new URLSearchParams(window.location.search);
       const appIdParam = params.get("appId");
@@ -121,35 +120,33 @@
       if (!appIdParam || !roomParam || playerStr === null) {
         statusText.textContent =
           "❗ Invalid parameters.\nUse: ?appId=…&room=…&player=0/1/2";
-        console.error("Missing or invalid URL params. Must include appId, room, and player.");
+        console.error("Missing or invalid URL params. Must include appId, room, player.");
         return;
       }
 
       const playerIndex = parseInt(playerStr, 10);
       if (isNaN(playerIndex) || playerIndex < 0) {
-        statusText.textContent = "❗ Invalid player index. Use 0, 1, 2, …";
+        statusText.textContent = "❗ Invalid player index (must be 0, 1, 2, …).";
         console.error("player query‐param is not a non‐negative integer:", playerStr);
         return;
       }
 
       //────────────────────────────────────────────────────────────────────────
-      // 3) Create LoadBalancingClient with WSS (secure WebSocket)
-      //    and disable automatic lobby join:
-      //        client.autoJoinLobby = false
+      // 3) Instantiate LoadBalancingClient with secure WSS and disable auto‐lobby
       //────────────────────────────────────────────────────────────────────────
       const client = new Photon.LoadBalancing.LoadBalancingClient(
-        Photon.ConnectionProtocol.Wss,  // ← must be Wss on HTTPS
+        Photon.ConnectionProtocol.Wss,  // ← Wss required for HTTPS pages
         appIdParam,                    // Photon Cloud AppId
         "1.0"                          // AppVersion (match Unity side)
       );
       client.logger = new Photon.Logger("GamepadJS");
       client.logger.setLevel(Photon.LogLevel.INFO);
 
-      // Disable auto‐join to the default lobby. We'll call joinOrCreateRoom ourselves.
+      // Disable the built‐in “join default lobby” step
       client.autoJoinLobby = false;
 
       //────────────────────────────────────────────────────────────────────────
-      // 4) onStateChange: display human‐readable status in #statusText
+      // 4) onStateChange: update #statusText with a readable state
       //────────────────────────────────────────────────────────────────────────
       client.onStateChange = function (state) {
         const stateName = Photon.LoadBalancing.LoadBalancingClient.StateToName(state);
@@ -189,32 +186,29 @@
       };
 
       //────────────────────────────────────────────────────────────────────────
-      // 5) onConnectedToMaster: call the high‐level joinOrCreateRoom immediately
+      // 5) onConnectedToMaster: use opJoinOrCreateRoom(...) to skip lobby
       //────────────────────────────────────────────────────────────────────────
       client.onConnectedToMaster = function () {
-        logDebug("onConnectedToMaster → calling joinOrCreateRoom:", roomParam);
+        logDebug("onConnectedToMaster → calling opJoinOrCreateRoom:", roomParam);
 
-        // Create a RoomOptions object with MaxPlayers = 10
-        const roomOptions = new Photon.LoadBalancing.RoomOptions({
-          MaxPlayers: 10
-        });
+        // Construct RoomOptions exactly as in Unity’s EnterRoomParams
+        const enterParams = {
+          RoomName: roomParam,
+          RoomOptions: new Photon.LoadBalancing.RoomOptions({ MaxPlayers: 10 })
+        };
 
-        client.joinOrCreateRoom(
-          roomParam,    // room name
-          roomOptions,  // RoomOptions
-          null          // TypedLobby = null (we disabled autoJoinLobby)
-        );
+        client.opJoinOrCreateRoom(enterParams);
       };
 
       //────────────────────────────────────────────────────────────────────────
-      // 6) onJoinedRoom: status updated by onStateChange; no extra action
+      // 6) onJoinedRoom: no extra action needed (status is updated above)
       //────────────────────────────────────────────────────────────────────────
       client.onJoinedRoom = function () {
         logDebug("onJoinedRoom → joined", roomParam);
       };
 
       //────────────────────────────────────────────────────────────────────────
-      // 7) onJoinRoomFailed: display error in #statusText
+      // 7) onJoinRoomFailed: display an error if the join/Create fails
       //────────────────────────────────────────────────────────────────────────
       client.onJoinRoomFailed = function (returnCode, errorMsg) {
         console.error("onJoinRoomFailed(", returnCode, "):", errorMsg);
@@ -223,7 +217,7 @@
       };
 
       //────────────────────────────────────────────────────────────────────────
-      // 8) onError: generic Photon error handler
+      // 8) onError: generic error handler
       //────────────────────────────────────────────────────────────────────────
       client.onError = function (errorCode, errorMsg) {
         console.error("Photon Error:", errorCode, errorMsg);
@@ -235,14 +229,14 @@
       };
 
       //────────────────────────────────────────────────────────────────────────
-      // 9) Connect to EU region Master over WSS
+      // 9) Connect to the EU region Master server (secure WebSocket)
       //────────────────────────────────────────────────────────────────────────
       logDebug("Calling connectToRegionMaster('eu') …");
       client.connectToRegionMaster("eu");
 
       //────────────────────────────────────────────────────────────────────────
       // 10) On tap/click: send RaiseEvent(eventCode=1, content=playerIndex)
-      //     (Only if client.state === JoinedToRoom)
+      //      (Only if client.state === JoinedToRoom)
       //────────────────────────────────────────────────────────────────────────
       function sendTap(evt) {
         evt.preventDefault();
