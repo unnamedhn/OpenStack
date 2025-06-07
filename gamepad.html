@@ -161,15 +161,9 @@
             displayText = "Connecting to Master…";
             break;
           case "ConnectedToMaster":
-            displayText = "Connected to Master. Joining Lobby…";
+            displayText = "Connected to Master. Joining Room…";
             break;
-          case "JoiningLobby":
-            displayText = `Joining Lobby…`;
-            break;
-          case "JoinedLobby":
-            displayText = `✅ Joined Lobby. Now joining room "${roomParam}"…`;
-            break;
-          case "Joining":
+          case "Joining":  // before onJoinedRoom
             displayText = `Joining Room "${roomParam}"…`;
             break;
           case "JoinedToRoom":
@@ -191,35 +185,29 @@
       };
 
       //────────────────────────────────────────────────────────────────────────
-      // 5) onConnectedToMaster: nothing here; wait for onJoinedLobby
+      // 5) onConnectedToMaster: schedule joinOrCreateRoom(...) immediately
       //────────────────────────────────────────────────────────────────────────
       client.onConnectedToMaster = function () {
-        logDebug("onConnectedToMaster → now waiting for onJoinedLobby");
-        // Do NOT call joinOrCreateRoom here. Instead, wait for onJoinedLobby.
+        logDebug("onConnectedToMaster → scheduling joinOrCreateRoom:", roomParam);
+        setTimeout(() => {
+          client.joinOrCreateRoom(
+            roomParam,  // room name
+            {},         // default RoomOptions
+            {}          // default LobbyOptions
+          );
+        }, 0);
       };
 
       //────────────────────────────────────────────────────────────────────────
-      // 6) onJoinedLobby: call joinOrCreateRoom(...) now that lobby is joined
-      //────────────────────────────────────────────────────────────────────────
-      client.onJoinedLobby = function () {
-        logDebug("onJoinedLobby → calling joinOrCreateRoom:", roomParam);
-        client.joinOrCreateRoom(
-          roomParam,  // room name
-          {},         // default RoomOptions
-          {}          // default LobbyOptions
-        );
-      };
-
-      //────────────────────────────────────────────────────────────────────────
-      // 7) onJoinedRoom: stateName “JoinedToRoom” handled in onStateChange
+      // 6) onJoinedRoom: no extra logic needed; status is handled in onStateChange
       //────────────────────────────────────────────────────────────────────────
       client.onJoinedRoom = function () {
         logDebug("onJoinedRoom → successfully joined", roomParam);
-        // UI is updated in onStateChange when stateName === "JoinedToRoom"
+        // The UI text “JoinedToRoom” is already handled by onStateChange.
       };
 
       //────────────────────────────────────────────────────────────────────────
-      // 8) onJoinRoomFailed: show error if joining fails
+      // 7) onJoinRoomFailed: show error if joining fails
       //────────────────────────────────────────────────────────────────────────
       client.onJoinRoomFailed = function (returnCode, errorMsg) {
         console.error("onJoinRoomFailed(", returnCode, "):", errorMsg);
@@ -228,7 +216,7 @@
       };
 
       //────────────────────────────────────────────────────────────────────────
-      // 9) onError: generic error callback
+      // 8) onError: generic error callback
       //────────────────────────────────────────────────────────────────────────
       client.onError = function (errorCode, errorMsg) {
         console.error("Photon Error:", errorCode, errorMsg);
@@ -240,17 +228,16 @@
       };
 
       //────────────────────────────────────────────────────────────────────────
-      // 10) Connect to EU region Master over WSS
+      // 9) Connect to EU region Master over WSS
       //────────────────────────────────────────────────────────────────────────
       logDebug("Calling connectToRegionMaster('eu') …");
       client.connectToRegionMaster("eu");
 
       //────────────────────────────────────────────────────────────────────────
-      // 11) On tap/click, send RaiseEvent(eventCode=1, content=playerIndex)
+      // 10) On tap/click, send RaiseEvent(eventCode=1, content=playerIndex)
       //────────────────────────────────────────────────────────────────────────
       function sendTap(evt) {
         evt.preventDefault();
-        // Check numeric state directly:
         if (client.state !== Photon.LoadBalancing.LoadBalancingClient.State.JoinedToRoom) {
           console.warn("Tap attempted before JoinedToRoom.");
           return;
@@ -271,7 +258,7 @@
       touchDiv.addEventListener("mousedown", sendTap);
 
       //────────────────────────────────────────────────────────────────────────
-      // 12) Prevent context menu on long‐press
+      // 11) Prevent context menu on long‐press
       //────────────────────────────────────────────────────────────────────────
       window.addEventListener("contextmenu", function (e) {
         e.preventDefault();
