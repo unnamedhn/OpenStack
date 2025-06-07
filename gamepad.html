@@ -30,6 +30,8 @@
       -webkit-user-select: none;
       touch-action: manipulation;
       background-color: #222;
+      text-align: center;
+      white-space: pre-wrap;
     }
   </style>
 </head>
@@ -37,12 +39,12 @@
 <body>
   <div id="touchButton">TAP TO STACK</div>
 
-  <!-- 1) Include the Photon Realtime JS SDK (v4.3.2). -->
+  <!-- Photon Realtime JavaScript SDK v4.3.2 (make sure this file exists) -->
   <script src="lib/photon.js"></script>
   <script>
     (function () {
       // ────────────────────────────────────────────────────────────────────────
-      // A) READ URL PARAMETERS:  ?appId=…&room=…&player=0/1/2
+      // A) PARSE URL PARAMETERS:  ?appId=…&room=…&player=0/1/2
       // ────────────────────────────────────────────────────────────────────────
       const params = new URLSearchParams(window.location.search);
       const appIdParam = params.get("appId");
@@ -57,71 +59,69 @@
       }
 
       // ────────────────────────────────────────────────────────────────────────
-      // B) CREATE & CONFIGURE LoadBalancingClient
-      //    - Using ConnectionProtocol.Udp (WebSocket under the hood)
-      //    - Must match your server’s region ("eu")
+      // B) CREATE & CONFIGURE LoadBalancingClient (v4.3.2)
+      //    - Use ConnectionProtocol.Wss so the browser opens a secure WebSocket
+      //    - Then explicitly connectToRegionMaster("eu")
       // ────────────────────────────────────────────────────────────────────────
-      // Photon.ConnectionProtocol.Udp = 0  (this still routes over WSS by default).
       const client = new Photon.LoadBalancing.LoadBalancingClient(
-        Photon.ConnectionProtocol.Udp,
+        Photon.ConnectionProtocol.Wss, // ← Must be Wss in an HTTPS‐served page
         appIdParam,
-        "1.0" // app version; keep in sync with your Unity host version
+        "1.0"                          // AppVersion (match your Unity host)
       );
       client.logger = new Photon.Logger("JS");
       client.logger.setLevel(Photon.LogLevel.INFO);
 
-      // (1) Called once we connect to Photon Master
+      // 1) onConnectedToMaster  →  join or create the room
       client.onConnectedToMaster = function () {
         console.log("[JS] onConnectedToMaster → joining room:", roomParam);
-
-        // join or create "roomParam", maxPlayers left to server defaults.
         client.joinOrCreateRoom(
-          roomParam,
-          {},       // no custom RoomOptions needed
-          {}        // no LobbyOptions needed
+          roomParam,  // room name (must match Unity’s “OpenStackRoom”)
+          {},         // no custom RoomOptions
+          {}          // no LobbyOptions
         );
       };
 
-      // (2) Called when we successfully join/create the room
+      // 2) onJoinedRoom → update the UI so user knows they’re in
       client.onJoinedRoom = function () {
         console.log("[JS] onJoinedRoom → IN ROOM:", roomParam, "PLAYER:", playerParam);
         document.getElementById("touchButton").innerText =
           "IN STACK ROOM\nPLAYER " + playerParam;
       };
 
-      // (3) Called if join/create failed
+      // 3) onJoinRoomFailed → show error on the button itself
       client.onJoinRoomFailed = function (returnCode, errorMsg) {
         console.error("[JS] onJoinRoomFailed(", returnCode, "):", errorMsg);
         document.getElementById("touchButton").innerText =
           "Failed to join room.\nSee console.";
       };
 
+      // Generic error callback
       client.onError = function (errorCode, errorMsg) {
         console.error("[JS] Photon Error:", errorCode, errorMsg);
       };
 
-      // We don’t need to handle incoming events on the JS side in this simple flow,
-      // but you can implement client.onEvent if needed.
+      // We don’t need to process inbound events in this simple tap‐only flow:
       client.onEvent = function (code, content, actorNr) {
-        // No-op (we only send taps from JS; Unity logs them).
+        // No‐op. (Unity is logging Raises on its side.)
       };
 
       // ────────────────────────────────────────────────────────────────────────
-      // C) START CONNECTION
+      // C) CONNECT TO REGION MASTER (EU)
       // ────────────────────────────────────────────────────────────────────────
-      client.connect(); // This calls connectToRegionMaster("eu") under the hood
+      client.connectToRegionMaster("eu");
+      // → This ensures “wss://<region>.p3photon.com:9093/…” under the hood instead of ws://.
 
       // ────────────────────────────────────────────────────────────────────────
-      // D) ON TAP: raiseEvent code=1 with content=playerParam
-      //    (Matches Unity’s buttonEventCode = 1)
+      // D) ON TAP: raiseEvent(eventCode=1, content=playerParam)
+      //    (Matches Unity’s `buttonEventCode = 1`)
       // ────────────────────────────────────────────────────────────────────────
       function sendTap(evt) {
         evt.preventDefault();
         if (client.getState() !== Photon.LoadBalancing.LoadBalancingClientState.Joined) {
-          console.warn("[JS] Tried to tap before joining room.");
+          console.warn("[JS] Tried tapping before actually joining the room.");
           return;
         }
-        // RaiseEvent(eventCode, content, RaiseEventOptions, SendOptions)
+
         client.raiseEvent(
           /* eventCode = */ 1,
           /* content   = */ playerParam,
@@ -133,7 +133,7 @@
         console.log("[JS] Sent tap for player", playerParam);
       }
 
-      // Hook touchstart and mousedown
+      // Attach both touchstart and mousedown for desktop/mobile
       const buttonDiv = document.getElementById("touchButton");
       buttonDiv.addEventListener("touchstart", sendTap, { passive: false });
       buttonDiv.addEventListener("mousedown", sendTap);
