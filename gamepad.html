@@ -165,10 +165,8 @@
           case "ConnectedToMaster":
             displayText = "Connected to Master. Joining Room…";
             break;
-          case "Joining":
-            displayText = `Joining Room "${roomParam}"…`;
-            break;
-          case "JoinedToRoom":
+          case "Joined":
+            // ← CORRECT NAME is “Joined” rather than “JoinedToRoom” :contentReference[oaicite:2]{index=2}
             displayText = `✅ Joined Room "${roomParam}"\nPLAYER ${playerIndex}`;
             break;
           case "Disconnecting":
@@ -191,10 +189,10 @@
       client.onConnectedToMaster = function () {
         logDebug("onConnectedToMaster → calling opJoinOrCreateRoom:", roomParam);
 
-        // Construct RoomOptions exactly as in Unity’s EnterRoomParams
+        // Use lowercase “roomName” and “roomOptions” so JS SDK recognizes them :contentReference[oaicite:3]{index=3}
         const enterParams = {
-          RoomName: roomParam,
-          RoomOptions: new Photon.LoadBalancing.RoomOptions({ MaxPlayers: 10 })
+          roomName: roomParam,
+          roomOptions: new Photon.LoadBalancing.RoomOptions({ maxPlayers: 10 })
         };
 
         client.opJoinOrCreateRoom(enterParams);
@@ -208,7 +206,7 @@
       };
 
       //────────────────────────────────────────────────────────────────────────
-      // 7) onJoinRoomFailed: display an error if the join/Create fails
+      // 7) onJoinRoomFailed: display an error if the join/create fails
       //────────────────────────────────────────────────────────────────────────
       client.onJoinRoomFailed = function (returnCode, errorMsg) {
         console.error("onJoinRoomFailed(", returnCode, "):", errorMsg);
@@ -236,13 +234,13 @@
 
       //────────────────────────────────────────────────────────────────────────
       // 10) On tap/click: send RaiseEvent(eventCode=1, content=playerIndex)
-      //      (Only if client.state === JoinedToRoom)
+      //      (Only if client.state === “Joined”)
       //────────────────────────────────────────────────────────────────────────
       function sendTap(evt) {
         evt.preventDefault();
 
-        if (client.state !== Photon.LoadBalancing.LoadBalancingClient.State.JoinedToRoom) {
-          console.warn("Tap attempted before JoinedToRoom.");
+        if (client.state !== Photon.LoadBalancing.LoadBalancingClient.State.Joined) {
+          console.warn("Tap attempted before Joined.");
           return;
         }
 
