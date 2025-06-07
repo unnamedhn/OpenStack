@@ -4,8 +4,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="Stack Gamepad - Multiplayer touch controller" />
+  <meta name="description" content="Stack Gamepad – Multiplayer touch controller" />
   <title>Stack Gamepad</title>
+
   <style>
     * {
       box-sizing: border-box;
@@ -18,7 +19,7 @@
       height: 100%;
       overflow: hidden;
       background: linear-gradient(135deg, #1a1a2e, #16213e);
-      font-family: 'Arial', sans-serif;
+      font-family: Arial, sans-serif;
     }
 
     #gameContainer {
@@ -66,12 +67,14 @@
       box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
     }
 
+    /* When connected: green pulsing background */
     #touchButton.connected {
       background: linear-gradient(145deg, #27ae60, #2ecc71);
       border-color: #2ecc71;
       animation: pulse 2s infinite;
     }
 
+    /* When an error occurs: show red background */
     #touchButton.error {
       background: linear-gradient(145deg, #c0392b, #e74c3c);
       border-color: #e74c3c;
@@ -134,6 +137,7 @@
       }
     }
 
+    /* Responsive design adjustments */
     @media (max-width: 480px) {
       #touchButton {
         width: 95%;
@@ -158,293 +162,22 @@
     <div id="errorMessage"></div>
   </div>
 
-  <script>
-    window.PhotonLoadBalancing = (function () {
-      class PhotonClient {
-        constructor(connectionProtocol, appId, gameVersion) {
-          this.appId = appId;
-          this.gameVersion = gameVersion;
-          this.state = 'Disconnected';
-          this.room = null;
-          this.websocket = null;
-          this.playerProperties = {};
-          this.eventHandlers = {};
-          this.messageId = 0;
-
-          this.onStateChange = null;
-          this.onError = null;
-          this.onJoinRoom = null;
-          this.onLeaveRoom = null;
-          this.onEvent = null;
-        }
-
-        connectToRegionMaster(region) {
-          this.setState('Connecting');
-          const wsUrl = `wss://ns.exitgames.com:19093`;
-
-          try {
-            this.websocket = new WebSocket(wsUrl);
-
-            this.websocket.onopen = () => {
-              console.log('[Photon] WebSocket connected');
-              this.setState('Connected');
-              this.sendInit();
-            };
-
-            this.websocket.onmessage = (event) => {
-              this.handleMessage(event.data);
-            };
-
-            this.websocket.onerror = (error) => {
-              console.error('[Photon] WebSocket error:', error);
-              if (this.onError) {
-                this.onError('WebSocketError', 'Connection failed');
-              }
-            };
-
-            this.websocket.onclose = () => {
-              console.log('[Photon] WebSocket disconnected');
-              this.setState('Disconnected');
-            };
-          } catch (error) {
-            console.error('[Photon] Failed to create WebSocket:', error);
-            if (this.onError) {
-              this.onError('ConnectionError', error.message);
-            }
-          }
-        }
-
-        sendInit() {
-          const initMessage = {
-            o: 229,
-            p: {
-              225: 1,
-              222: "JavaScript",
-              223: "1.0.0"
-            }
-          };
-          this.sendPhotonMessage(initMessage);
-          console.log('[Photon] Init message sent');
-        }
-
-        sendAuthentication() {
-          const authMessage = {
-            o: 230,
-            p: {
-              220: this.appId,
-              221: this.gameVersion,
-              222: "JavaScript",
-              223: "1.0.0",
-              224: "JS",
-              225: 1
-            }
-          };
-          this.sendPhotonMessage(authMessage);
-          console.log('[Photon] Authentication sent');
-        }
-
-        joinOrCreateRoom(roomName, roomOptions) {
-          console.log('[Photon] Joining/Creating room:', roomName);
-          this.room = {
-            name: roomName,
-            options: roomOptions || {}
-          };
-          this.sendJoinRoom(roomName, roomOptions);
-        }
-
-        sendJoinRoom(roomName, roomOptions) {
-          const joinMessage = {
-            o: 227,
-            p: {
-              255: roomName,
-              248: roomOptions || {},
-              249: true,
-              213: this.playerProperties
-            }
-          };
-          this.sendPhotonMessage(joinMessage);
-          console.log('[Photon] Join room message sent');
-        }
-
-        raiseEvent(eventCode, eventData, eventOptions) {
-          if (this.state !== 'Joined') {
-            console.warn('[Photon] Cannot raise event: not in room');
-            return false;
-          }
-          const message = {
-            o: 253,
-            p: {
-              252: eventCode,
-              245: eventData,
-              254: eventOptions?.receivers || 0,
-              250: eventOptions?.sendReliable || false
-            }
-          };
-          this.sendPhotonMessage(message);
-          console.log('[Photon] Event sent - Code:', eventCode, 'Data:', eventData);
-          return true;
-        }
-
-        sendPhotonMessage(messageObj) {
-          if (!this.websocket || this.websocket.readyState !== WebSocket.OPEN) {
-            console.warn('[Photon] Cannot send message: WebSocket not ready');
-            return false;
-          }
-          try {
-            messageObj.msgId = ++this.messageId;
-            const jsonStr = JSON.stringify(messageObj);
-            const message = `~m~${jsonStr.length}~m~${jsonStr}`;
-            this.websocket.send(message);
-            return true;
-          } catch (error) {
-            console.error('[Photon] Failed to send message:', error);
-            return false;
-          }
-        }
-
-        setState(newState) {
-          const oldState = this.state;
-          this.state = newState;
-          console.log(`[Photon] State: ${oldState} → ${newState}`);
-          if (this.onStateChange) {
-            this.onStateChange(newState);
-          }
-        }
-
-        handleMessage(data) {
-          try {
-            console.log('[Photon] Received message:', data.substring(0, 100) + '...');
-            if (typeof data === 'string' && data.includes('~m~')) {
-              const messages = this.parsePhotonFrames(data);
-              messages.forEach(msg => {
-                this.processPhotonMessage(msg);
-              });
-            }
-          } catch (error) {
-            console.error('[Photon] Error handling message:', error);
-          }
-        }
-
-        parsePhotonFrames(data) {
-          const messages = [];
-          let pos = 0;
-          while (pos < data.length) {
-            const frameStart = data.indexOf('~m~', pos);
-            if (frameStart === -1) break;
-            const lengthStart = frameStart + 3;
-            const lengthEnd = data.indexOf('~m~', lengthStart);
-            if (lengthEnd === -1) break;
-            const length = parseInt(data.substring(lengthStart, lengthEnd));
-            const messageStart = lengthEnd + 3;
-            const messageEnd = messageStart + length;
-            if (messageEnd <= data.length) {
-              const messageStr = data.substring(messageStart, messageEnd);
-              try {
-                const messageObj = JSON.parse(messageStr);
-                messages.push(messageObj);
-              } catch (e) {
-                console.warn('[Photon] Failed to parse message JSON:', messageStr);
-              }
-            }
-            pos = messageEnd;
-          }
-          return messages;
-        }
-
-        processPhotonMessage(message) {
-          if (message.o) {
-            switch (message.o) {
-              case 229:
-                if (message.p && message.p[253] === 0) {
-                  console.log('[Photon] Init successful');
-                  this.sendAuthentication();
-                } else {
-                  console.error('[Photon] Init failed:', message.p);
-                  if (this.onError) {
-                    this.onError('InitError', 'Initialization failed');
-                  }
-                }
-                break;
-              case 230:
-                if (message.p && message.p[253] === 0) {
-                  console.log('[Photon] Authentication successful');
-                  this.setState('JoinedLobby');
-                } else {
-                  console.error('[Photon] Authentication failed:', message.p);
-                  if (this.onError) {
-                    this.onError('AuthError', 'Authentication failed');
-                  }
-                }
-                break;
-              case 227:
-                if (message.p && message.p[253] === 0) {
-                  console.log('[Photon] Successfully joined room');
-                  this.setState('Joined');
-                  if (this.onJoinRoom) {
-                    this.onJoinRoom();
-                  }
-                } else {
-                  console.error('[Photon] Failed to join room:', message.p);
-                  if (this.onError) {
-                    this.onError('JoinRoomError', 'Failed to join room');
-                  }
-                }
-                break;
-              case 253:
-                if (this.onEvent && message.p) {
-                  this.onEvent(message.p[252], message.p[245], message.p[254]);
-                }
-                break;
-            }
-          } else if (message.err) {
-            console.error('[Photon] Server error:', message.msg, 'Code:', message.err);
-            if (this.onError) {
-              this.onError('ServerError', message.msg || 'Unknown error');
-            }
-          } else {
-            console.warn('[Photon] Unhandled message:', message);
-          }
-        }
-
-        disconnect() {
-          if (this.websocket) {
-            this.websocket.close();
-          }
-          this.setState('Disconnected');
-        }
-      }
-
-      return {
-        LoadBalancingClient: PhotonClient,
-        ConnectionProtocol: {
-          Ws: 'WebSocket',
-          Udp: 'UDP'
-        },
-        Constants: {
-          ReceiverGroup: {
-            All: 0,
-            Others: 1
-          }
-        }
-      };
-    })();
-
-    window.Photon = {
-      LoadBalancing: window.PhotonLoadBalancing
-    };
-  </script>
+  <!-- 1) Include the official Photon LoadBalancing JS SDK from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/photon-loadbalancing@latest/dist/LoadBalancing-Client.min.js"></script>
 
   <script>
     (function () {
       'use strict';
 
+      // --------------- Configuration ---------------
       const config = {
-        region: 'eu',
+        region: 'EU',           // Photon region (must match your Photon Dashboard region)
         gameVersion: '1.0',
         maxRetries: 3,
-        retryDelay: 2000
+        retryDelay: 2000        // ms between automatic reconnect attempts
       };
 
+      // --------------- State ---------------
       let state = {
         client: null,
         retryCount: 0,
@@ -454,36 +187,30 @@
         appId: null
       };
 
+      // --------------- DOM References ---------------
       const elements = {
         touchButton: document.getElementById('touchButton'),
         statusInfo: document.getElementById('statusInfo'),
         errorMessage: document.getElementById('errorMessage')
       };
 
+      // --------------- Utility Functions ---------------
       const utils = {
         updateStatus: (message, isError = false) => {
-          console.log(`[Status] ${message}`);
           elements.statusInfo.textContent = message;
-          if (isError) {
-            elements.statusInfo.style.color = '#e74c3c';
-          } else {
-            elements.statusInfo.style.color = '#bdc3c7';
-          }
+          elements.statusInfo.style.color = isError ? '#e74c3c' : '#bdc3c7';
         },
 
         showError: (message) => {
-          console.error(`[Error] ${message}`);
           elements.errorMessage.textContent = message;
           elements.errorMessage.style.display = 'block';
           elements.touchButton.classList.add('error');
+
+          // Hide after 5 seconds, then clear the red state
           setTimeout(() => {
             elements.errorMessage.style.display = 'none';
+            elements.touchButton.classList.remove('error');
           }, 5000);
-        },
-
-        updateButtonState: (text, className = '') => {
-          elements.touchButton.textContent = text;
-          elements.touchButton.className = className;
         },
 
         parseUrlParams: () => {
@@ -509,18 +236,24 @@
         }
       };
 
+      // --------------- Photon Manager (using the official SDK) ---------------
       const photonManager = {
         init: (appId) => {
           try {
             if (typeof Photon === 'undefined' || !Photon.LoadBalancing) {
               throw new Error('Photon SDK not loaded');
             }
+
+            // Create a new LoadBalancingClient
             state.client = new Photon.LoadBalancing.LoadBalancingClient(
               Photon.LoadBalancing.ConnectionProtocol.Ws,
               appId,
               config.gameVersion
             );
+
+            // Set up all callbacks
             photonManager.setupEventHandlers();
+
             utils.updateStatus('Photon client initialized');
             return true;
           } catch (error) {
@@ -531,74 +264,70 @@
 
         setupEventHandlers: () => {
           const client = state.client;
-          client.onStateChange = (state_code) => {
-            console.log('[Photon] State changed to:', state_code);
-            switch (state_code) {
-              case 'JoinedLobby':
+
+          // This callback is invoked whenever the client's state changes.
+          client.onStateChange = (newState, oldState) => {
+            console.log(`[Photon] State changed: ${oldState} → ${newState}`);
+
+            switch (newState) {
+              case Photon.LoadBalancing.LoadBalancingClient.State.JoinedLobby:
                 utils.updateStatus('Joined lobby, creating/joining room...');
-                photonManager.joinOrCreateRoom();
+                client.joinOrCreateRoom(state.roomName, { maxPlayers: 3, isVisible: true, isOpen: true });
                 break;
-              case 'Joined':
+
+              case Photon.LoadBalancing.LoadBalancingClient.State.Joined:
                 state.isConnected = true;
                 utils.updateStatus(`Connected to room: ${state.roomName}`);
-                utils.updateButtonState(`READY TO STACK\nPLAYER ${state.playerId}`, 'connected');
+                elements.touchButton.classList.add('connected');
+                elements.touchButton.textContent = `READY TO STACK\nPLAYER ${state.playerId}`;
                 break;
-              case 'Disconnected':
+
+              case Photon.LoadBalancing.LoadBalancingClient.State.Disconnected:
                 state.isConnected = false;
-                utils.updateStatus('Disconnected from server');
+                utils.updateStatus('Disconnected from server', true);
                 photonManager.handleDisconnection();
                 break;
-              case 'Connecting':
+
+              case Photon.LoadBalancing.LoadBalancingClient.State.ConnectingToNameServer:
+              case Photon.LoadBalancing.LoadBalancingClient.State.ConnectingToMasterserver:
                 utils.updateStatus('Connecting to Photon servers...');
                 break;
-              case 'Connected':
-                utils.updateStatus('Connected, initializing...');
-                break;
+
+              // You can handle other states (e.g. JoinFailed, ConnectingToGameserver, etc.) if needed.
             }
           };
 
+          // Error callback
           client.onError = (errorCode, errorMsg) => {
-            console.error('[Photon] Error:', errorCode, errorMsg);
+            console.error(`[Photon] Error ${errorCode}: ${errorMsg}`);
             utils.showError(`Connection error: ${errorMsg || errorCode}`);
           };
 
+          // This is invoked when you actually join a room (after joinOrCreate succeeds)
           client.onJoinRoom = () => {
             console.log('[Photon] Successfully joined room');
           };
 
+          // When you leave the room
           client.onLeaveRoom = () => {
             console.log('[Photon] Left room');
             state.isConnected = false;
           };
 
+          // When you receive a custom RaiseEvent
           client.onEvent = (code, content, actorNr) => {
-            console.log('[Photon] Received event:', { code, content, actorNr });
+            console.log(`[Photon] Received event: code=${code}, content=${content}, actorNr=${actorNr}`);
+            // We don’t expect any incoming events on the gamepad itself. Unity host handles them.
           };
         },
 
         connect: () => {
           try {
             utils.updateStatus('Connecting to Photon servers...');
+            // Connect to NameServer → MasterServer → Lobby
             state.client.connectToRegionMaster(config.region);
           } catch (error) {
             utils.showError(`Connection failed: ${error.message}`);
-          }
-        },
-
-        joinOrCreateRoom: () => {
-          try {
-            const roomOptions = {
-              maxPlayers: 3,
-              isVisible: true,
-              isOpen: true
-            };
-            state.client.joinOrCreateRoom(
-              state.roomName,
-              roomOptions,
-              null
-            );
-          } catch (error) {
-            utils.showError(`Failed to join/create room: ${error.message}`);
           }
         },
 
@@ -607,21 +336,22 @@
             console.warn('[Photon] Tap ignored: not connected to room');
             return false;
           }
+
           try {
             const eventOptions = {
               receivers: Photon.LoadBalancing.Constants.ReceiverGroup.All,
               sendReliable: false
             };
-            state.client.raiseEvent(
-              1,
-              state.playerId,
-              eventOptions
-            );
-            console.log(`[Photon] Sent tap event for player ${state.playerId}`);
+
+            // Event code 1 for “button press,” data = playerId
+            state.client.raiseEvent(1, state.playerId, eventOptions);
+
+            // Brief visual feedback (shrink button)
             elements.touchButton.style.transform = 'scale(0.95)';
             setTimeout(() => {
               elements.touchButton.style.transform = '';
             }, 100);
+
             return true;
           } catch (error) {
             utils.showError(`Failed to send tap event: ${error.message}`);
@@ -632,21 +362,26 @@
         handleDisconnection: () => {
           if (state.retryCount < config.maxRetries) {
             state.retryCount++;
-            utils.updateStatus(`Connection lost. Retrying... (${state.retryCount}/${config.maxRetries})`);
+            utils.updateStatus(`Connection lost. Retrying... (${state.retryCount}/${config.maxRetries})`, true);
+
             setTimeout(() => {
               photonManager.connect();
             }, config.retryDelay);
           } else {
             utils.showError('Maximum retry attempts reached. Please refresh the page.');
-            utils.updateButtonState('CONNECTION FAILED\nREFRESH PAGE', 'error');
+            elements.touchButton.textContent = 'CONNECTION FAILED\nREFRESH PAGE';
           }
         }
       };
 
+      // --------------- Input Manager ---------------
       const inputManager = {
         init: () => {
+          // Touchstart (with passive: false) + mousedown
           elements.touchButton.addEventListener('touchstart', inputManager.handleTap, { passive: false });
           elements.touchButton.addEventListener('mousedown', inputManager.handleTap);
+
+          // Prevent long-press context menu
           elements.touchButton.addEventListener('contextmenu', (e) => e.preventDefault());
         },
 
@@ -657,31 +392,46 @@
         }
       };
 
+      // --------------- Main Initialization ---------------
       const init = async () => {
         try {
+          // 1) Parse & validate URL parameters
           const params = utils.parseUrlParams();
           utils.validateParams(params);
+
           state.appId = params.appId;
           state.roomName = params.room;
           state.playerId = params.player;
+
           utils.updateStatus('Validating parameters...');
-          await new Promise(resolve => setTimeout(resolve, 100));
+
+          // 2) Wait a frame in case DOM needs time
+          await new Promise((resolve) => setTimeout(resolve, 50));
+
+          // 3) Initialize Photon client
           if (!photonManager.init(state.appId)) {
             return;
           }
+
+          // 4) Initialize input (touch/mouse)
           inputManager.init();
+
+          // 5) Connect
           photonManager.connect();
         } catch (error) {
           utils.showError(error.message);
-          utils.updateButtonState('INVALID PARAMETERS\nCHECK URL', 'error');
+          elements.touchButton.textContent = 'INVALID PARAMETERS\nCHECK URL';
+          elements.touchButton.classList.add('error');
         }
       };
 
+      // --------------- Handle Page Visibility & Unload ---------------
       document.addEventListener('visibilitychange', () => {
         if (document.hidden) {
-          console.log('[App] Page hidden - pausing updates');
+          console.log('[App] Page hidden – pausing updates');
         } else {
-          console.log('[App] Page visible - resuming updates');
+          console.log('[App] Page visible – resuming updates');
+          // If disconnected, try to reconnect
           if (!state.isConnected && state.client) {
             photonManager.connect();
           }
@@ -690,10 +440,12 @@
 
       window.addEventListener('beforeunload', () => {
         if (state.client && state.isConnected) {
-          state.client.disconnect();
+          state.client.leaveRoom();     // politely leave
+          state.client.disconnect();    // close the WebSocket
         }
       });
 
+      // Kick off init()
       if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);
       } else {
