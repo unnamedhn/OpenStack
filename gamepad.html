@@ -1,21 +1,26 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Stack Gamepad</title>
   <style>
-    html, body {
+    html,
+    body {
       margin: 0;
       padding: 0;
       height: 100%;
       overflow: hidden;
       background-color: #111;
     }
+
     #touchButton {
       position: absolute;
-      top: 0; left: 0;
-      width: 100%; height: 100%;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -28,18 +33,19 @@
     }
   </style>
 </head>
+
 <body>
   <div id="touchButton">TAP TO STACK</div>
 
   <!-- Photon Realtime JavaScript SDK from CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/photon-realtime@5.1.5/build/photon-realtime.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/photon-realtime@4.3.2/photon-realtime-module.js"></script>
   <script>
-    (function() {
+    (function () {
       // 1) Parse URL parameters
       const params = new URLSearchParams(window.location.search);
-      const appIdParam   = params.get("appId");
-      const roomParam    = params.get("room");
-      const playerParam  = parseInt(params.get("player"), 10);
+      const appIdParam = params.get("appId");
+      const roomParam = params.get("room");
+      const playerParam = parseInt(params.get("player"), 10);
 
       if (!appIdParam || !roomParam || isNaN(playerParam)) {
         document.getElementById("touchButton").innerText =
@@ -103,8 +109,8 @@
           /* eventCode = */ 1,
           /* content   = */ playerParam,
           /* options   = */ new Photon.Realtime.RaiseEventOptions({
-            Receivers: Photon.Realtime.ReceiverGroup.All
-          }),
+          Receivers: Photon.Realtime.ReceiverGroup.All
+        }),
           /* sendOpts  = */ new Photon.Realtime.SendOptions({ Reliability: true })
         );
         // (We choose Reliable = true, so no taps get lost.)
@@ -112,4 +118,5 @@
     })();
   </script>
 </body>
+
 </html>
