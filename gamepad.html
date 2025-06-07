@@ -192,12 +192,10 @@
         logDebug("onConnectedToMaster → calling opJoinOrCreateRoom:", roomParam);
 
         // Construct RoomOptions exactly as in Unity’s EnterRoomParams
-        const enterParams = {
-          RoomName: roomParam,
-          RoomOptions: new Photon.LoadBalancing.RoomOptions({ MaxPlayers: 10 })
-        };
+        const roomOptions = new Photon.LoadBalancing.RoomOptions();
+        roomOptions.MaxPlayers = 10;
 
-        client.opJoinOrCreateRoom(enterParams);
+        client.opJoinOrCreateRoom(roomParam, roomOptions);
       };
 
       //────────────────────────────────────────────────────────────────────────
