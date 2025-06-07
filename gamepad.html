@@ -164,6 +164,21 @@
             break;
           case "ConnectedToMaster":
             displayText = "Connected to Master. Joining Room…";
+            // Trigger room join here as fallback if callback doesn't work
+            setTimeout(() => {
+              if (client.state === Photon.LoadBalancing.LoadBalancingClient.State.ConnectedToMaster) {
+                logDebug("Triggering room join from onStateChange");
+                const success = client.joinRoom(roomParam, {}, {
+                  MaxPlayers: 10,
+                  IsVisible: true,
+                  IsOpen: true
+                });
+                if (!success) {
+                  logDebug("joinRoom call failed from onStateChange");
+                  statusText.textContent = "❌ Failed to initiate room join";
+                }
+              }
+            }, 100);
             break;
           case "Joining":
             displayText = `Joining Room "${roomParam}"…`;
