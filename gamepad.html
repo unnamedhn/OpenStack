@@ -163,7 +163,10 @@
             displayText = "Connecting to Master…";
             break;
           case Photon.LoadBalancing.LoadBalancingClient.State.ConnectedToMaster:
-            displayText = "Connected to Master. Joining Room…";
+            displayText = "Connected to Master…";
+            break;
+          case Photon.LoadBalancing.LoadBalancingClient.State.JoinedLobby:
+            displayText = "In Lobby. Joining Room…";
             break;
           case Photon.LoadBalancing.LoadBalancingClient.State.ConnectingToGameserver:
             displayText = `Joining Room "${roomParam}"…`;
@@ -183,26 +186,18 @@
 
         statusText.textContent = displayText;
         logDebug("onStateChange →", stateName, "| Display:", displayText.replace(/\n/g, " | "));
-      };
 
-      //────────────────────────────────────────────────────────────────────────
-      // 5) Connection flow handlers
-      //────────────────────────────────────────────────────────────────────────
-
-      // Handle successful connection to NameServer
-      client.onConnectedToNameServer = function () {
-        logDebug("Connected to NameServer, now connecting to region master 'eu'");
-        // Connect to EU region master server
-        const result = client.connectToRegionMaster("eu");
-        if (!result) {
-          console.error("Failed to connect to region master");
-          statusText.textContent = "❌ Failed to connect to region";
+        // FIXED: Join room when we reach JoinedLobby state
+        if (state === Photon.LoadBalancing.LoadBalancingClient.State.JoinedLobby) {
+          attemptJoinRoom();
         }
       };
 
-      // Handle successful connection to Master server
-      client.onConnectedToMaster = function () {
-        logDebug("Connected to Master server, attempting to join/create room:", roomParam);
+      //────────────────────────────────────────────────────────────────────────
+      // 5) Function to attempt joining room (called when in lobby)
+      //────────────────────────────────────────────────────────────────────────
+      function attemptJoinRoom() {
+        logDebug("Now in lobby, attempting to join/create room:", roomParam);
 
         // Use joinRoom with createIfNotExists option
         const joinResult = client.joinRoom(roomParam, {
@@ -216,18 +211,40 @@
         if (!joinResult) {
           console.error("Failed to send join room request");
           statusText.textContent = "❌ Failed to join room";
+        } else {
+          logDebug("Join room request sent successfully");
+        }
+      }
+
+      //────────────────────────────────────────────────────────────────────────
+      // 6) Connection flow handlers
+      //────────────────────────────────────────────────────────────────────────
+
+      // Handle successful connection to NameServer
+      client.onConnectedToNameServer = function () {
+        logDebug("Connected to NameServer, now connecting to region master 'eu'");
+        // Connect to EU region master server
+        const result = client.connectToRegionMaster("eu");
+        if (!result) {
+          console.error("Failed to connect to region master");
+          statusText.textContent = "❌ Failed to connect to region";
         }
       };
 
+      // Handle successful connection to Master server (removed room joining logic from here)
+      client.onConnectedToMaster = function () {
+        logDebug("Connected to Master server, waiting to join lobby...");
+      };
+
       //────────────────────────────────────────────────────────────────────────
-      // 6) onJoinRoom: room joined successfully
+      // 7) onJoinRoom: room joined successfully
       //────────────────────────────────────────────────────────────────────────
       client.onJoinRoom = function (createdByMe) {
         logDebug("onJoinRoom → joined", roomParam, "created by me:", createdByMe);
       };
 
       //────────────────────────────────────────────────────────────────────────
-      // 7) Handle operation responses for better error handling
+      // 8) Handle operation responses for better error handling
       //────────────────────────────────────────────────────────────────────────
       client.onOperationResponse = function (errorCode, errorMsg, code, content) {
         if (errorCode !== 0) {
@@ -244,7 +261,7 @@
       };
 
       //────────────────────────────────────────────────────────────────────────
-      // 8) onError: generic error handler
+      // 9) onError: generic error handler
       //────────────────────────────────────────────────────────────────────────
       client.onError = function (errorCode, errorMsg) {
         console.error("Photon Error:", errorCode, errorMsg);
@@ -253,7 +270,7 @@
       };
 
       //────────────────────────────────────────────────────────────────────────
-      // 9) Start connection - connect to NameServer first
+      // 10) Start connection - connect to NameServer first
       //────────────────────────────────────────────────────────────────────────
       logDebug("Starting connection to NameServer...");
       const connectResult = client.connectToNameServer({
@@ -266,7 +283,7 @@
       }
 
       //────────────────────────────────────────────────────────────────────────
-      // 10) On tap/click: send RaiseEvent(eventCode=1, content=playerIndex)
+      // 11) On tap/click: send RaiseEvent(eventCode=1, content=playerIndex)
       //      (Only if client is joined to room)
       //────────────────────────────────────────────────────────────────────────
       function sendTap(evt) {
@@ -295,7 +312,7 @@
       touchDiv.addEventListener("mousedown", sendTap);
 
       //────────────────────────────────────────────────────────────────────────
-      // 11) Prevent context menu on long‐press
+      // 12) Prevent context menu on long‐press
       //────────────────────────────────────────────────────────────────────────
       window.addEventListener("contextmenu", function (e) {
         e.preventDefault();
