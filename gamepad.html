@@ -294,36 +294,45 @@
       function sendTap(evt) {
         evt.preventDefault();
 
-        if (!client.isJoinedToRoom()) {
-          console.warn("Tap attempted before joining room. Current state:", client.state());
+        // Check if client is properly connected and in room
+        if (!client || !client.isJoinedToRoom()) {
+          console.warn("Tap attempted before joining room. Current state:", client?.state?.() || "unknown");
           return;
         }
+
+        // Prevent rapid-fire tapping
+        const now = Date.now();
+        if (sendTap.lastTap && (now - sendTap.lastTap) < 100) {
+          return; // Debounce: ignore taps within 100ms
+        }
+        sendTap.lastTap = now;
 
         // Ensure we send an integer (not a string or other type)
         const playerData = parseInt(playerIndex, 10);
 
         logDebug("Sending tap event with data:", playerData, "type:", typeof playerData);
 
-        // Use the correct raiseEvent API
-        const result = client.raiseEvent(
-          1,           // eventCode
-          playerData,  // data - explicitly as integer
-          {            // options
-            receivers: Photon.LoadBalancing.Constants.ReceiverGroup.All,
-            cache: Photon.LoadBalancing.Constants.EventCaching.DoNotCache
-          }
-        );
+        try {
+          // Use the correct raiseEvent API - the return value might not be reliable
+          client.raiseEvent(
+            1,           // eventCode
+            playerData,  // data - explicitly as integer
+            {            // options
+              receivers: Photon.LoadBalancing.Constants.ReceiverGroup.All,
+              cache: Photon.LoadBalancing.Constants.EventCaching.DoNotCache
+            }
+          );
 
-        if (result) {
-          logDebug("Sent tap (event=1) for player", playerIndex);
+          logDebug("Tap event sent for player", playerIndex);
 
-          // Visual feedback
+          // Visual feedback - always show since the event is likely sent successfully
           touchDiv.style.backgroundColor = "#555";
           setTimeout(() => {
             touchDiv.style.backgroundColor = "#222";
           }, 100);
-        } else {
-          console.error("Failed to send tap event");
+
+        } catch (error) {
+          console.error("Exception while sending tap event:", error);
         }
       }
 
