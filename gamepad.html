@@ -159,10 +159,9 @@
     <div id="errorMessage"></div>
   </div>
 
-  <!-- Photon JavaScript SDK - Embedded version for browser compatibility -->
+  <!-- Photon JavaScript SDK - Fixed version -->
   <script>
-    // Minimal Photon LoadBalancing client implementation for browser use
-    // This is a simplified version that works with Photon Cloud
+    // Fixed Photon LoadBalancing client implementation
     window.PhotonLoadBalancing = (function () {
 
       class PhotonClient {
@@ -197,8 +196,8 @@
               console.log('[Photon] WebSocket connected');
               this.setState('Connected');
 
-              // Send authentication message to Photon
-              this.sendAuthentication();
+              // Send initialization message to Photon
+              this.sendInitMessage();
             };
 
             this.websocket.onmessage = (event) => {
@@ -225,6 +224,23 @@
           }
         }
 
+        sendInitMessage() {
+          // Send initialization message to Photon
+          const initMessage = {
+            o: 1, // Init operation
+            p: {
+              0: "1.0", // Protocol version
+              1: this.appId, // Application ID
+              2: "JavaScript", // SDK ID
+              3: "1.0.0", // SDK version
+              4: "JS" // Client type
+            }
+          };
+
+          this.sendPhotonMessage(initMessage);
+          console.log('[Photon] Initialization message sent');
+        }
+
         joinOrCreateRoom(roomName, roomOptions) {
           console.log('[Photon] Joining/Creating room:', roomName);
           this.room = {
@@ -232,16 +248,8 @@
             options: roomOptions || {}
           };
 
-          // Send the actual join room message using Photon protocol
+          // Send the join room message using Photon protocol
           this.sendJoinRoom(roomName, roomOptions);
-
-          // Simulate successful room join after a delay
-          setTimeout(() => {
-            this.setState('Joined');
-            if (this.onJoinRoom) {
-              this.onJoinRoom();
-            }
-          }, 1500);
         }
 
         sendJoinRoom(roomName, roomOptions) {
@@ -298,11 +306,6 @@
 
           this.sendPhotonMessage(authMessage);
           console.log('[Photon] Authentication sent');
-
-          // Simulate successful authentication and lobby join
-          setTimeout(() => {
-            this.setState('JoinedLobby');
-          }, 1000);
         }
 
         sendPhotonMessage(messageObj) {
@@ -396,12 +399,45 @@
           // Handle different operation responses
           if (message.o) {
             switch (message.o) {
+              case 2: // Init response
+                console.log('[Photon] Init response received');
+                if (message.r === 0) {
+                  this.sendAuthentication();
+                } else {
+                  console.error('[Photon] Init failed:', message);
+                  if (this.onError) {
+                    this.onError('InitError', 'Initialization failed');
+                  }
+                }
+                break;
+
               case 230: // Authenticate response
                 console.log('[Photon] Authentication response received');
+                if (message.r === 0) {
+                  this.setState('JoinedLobby');
+                } else {
+                  console.error('[Photon] Authentication failed:', message);
+                  if (this.onError) {
+                    this.onError('AuthError', 'Authentication failed');
+                  }
+                }
                 break;
+
               case 227: // JoinOrCreateRoom response
                 console.log('[Photon] JoinRoom response received');
+                if (message.r === 0) {
+                  this.setState('Joined');
+                  if (this.onJoinRoom) {
+                    this.onJoinRoom();
+                  }
+                } else {
+                  console.error('[Photon] Join room failed:', message);
+                  if (this.onError) {
+                    this.onError('JoinRoomError', 'Failed to join room');
+                  }
+                }
                 break;
+
               case 253: // RaiseEvent
                 if (this.onEvent && message.p) {
                   this.onEvent(message.p[252], message.p[245], message.p[254]);
@@ -576,7 +612,7 @@
                 break;
 
               case 'Connected':
-                utils.updateStatus('Connected, joining lobby...');
+                utils.updateStatus('Connected, initializing...');
                 break;
             }
           };
@@ -622,8 +658,7 @@
 
             state.client.joinOrCreateRoom(
               state.roomName,
-              roomOptions,
-              null // TypedLobby
+              roomOptions
             );
           } catch (error) {
             utils.showError(`Failed to join/create room: ${error.message}`);
