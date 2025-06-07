@@ -174,6 +174,7 @@
           this.websocket = null;
           this.playerProperties = {};
           this.eventHandlers = {};
+          this.messageId = 0;
 
           // Event callbacks
           this.onStateChange = null;
@@ -243,6 +244,22 @@
           }, 1500);
         }
 
+        sendJoinRoom(roomName, roomOptions) {
+          // Operation code for JoinOrCreateRoom
+          const joinMessage = {
+            o: 227, // JoinOrCreateRoom operation
+            p: {
+              255: roomName, // Room name parameter
+              248: roomOptions || {}, // Room options parameter
+              249: true, // Create if not exists
+              213: this.playerProperties // Player properties
+            }
+          };
+
+          this.sendPhotonMessage(joinMessage);
+          console.log('[Photon] Join room message sent');
+        }
+
         raiseEvent(eventCode, eventData, eventOptions) {
           if (this.state !== 'Joined') {
             console.warn('[Photon] Cannot raise event: not in room');
@@ -250,17 +267,18 @@
           }
 
           // For Photon's binary protocol, we need to format the message properly
-          // This is a simplified approach - in reality, Photon uses complex binary encoding
-          const message = this.encodePhotonMessage(eventCode, eventData, eventOptions);
+          const message = {
+            o: 253, // Operation code for RaiseEvent
+            p: {
+              252: eventCode, // Event code parameter
+              245: eventData, // Event data parameter
+              254: eventOptions?.receivers || 0, // Receiver group
+              250: eventOptions?.sendReliable || false // Reliable flag
+            }
+          };
 
-          // Send via WebSocket if available
-          if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
-            this.websocket.send(message);
-            console.log('[Photon] Event sent - Code:', eventCode, 'Data:', eventData);
-          } else {
-            console.log('[Photon] Event simulated (no connection) - Code:', eventCode, 'Data:', eventData);
-          }
-
+          this.sendPhotonMessage(message);
+          console.log('[Photon] Event sent - Code:', eventCode, 'Data:', eventData);
           return true;
         }
 
@@ -272,39 +290,41 @@
               220: this.appId, // App ID
               221: this.gameVersion, // Game version
               222: "JavaScript", // SDK ID
-              223: "1.0.0" // SDK version
+              223: "1.0.0", // SDK version
+              224: "JS", // Client type
+              225: 1 // Protocol version
             }
           };
 
-          const jsonStr = JSON.stringify(authMessage);
-          const message = `~m~${jsonStr.length}~m~${jsonStr}`;
+          this.sendPhotonMessage(authMessage);
+          console.log('[Photon] Authentication sent');
 
-          if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
-            this.websocket.send(message);
-            console.log('[Photon] Authentication sent');
-
-            // Simulate successful authentication and lobby join
-            setTimeout(() => {
-              this.setState('JoinedLobby');
-            }, 1000);
-          }
+          // Simulate successful authentication and lobby join
+          setTimeout(() => {
+            this.setState('JoinedLobby');
+          }, 1000);
         }
 
-        encodePhotonMessage(eventCode, eventData, eventOptions) {
-          // This is a simplified encoding for Photon's protocol
-          // In reality, Photon uses a complex binary protocol
-          const messageObj = {
-            o: 253, // Operation code for RaiseEvent
-            p: {
-              252: eventCode, // Event code parameter
-              245: eventData, // Event data parameter
-              254: eventOptions?.receivers || 0 // Receiver group
-            }
-          };
+        sendPhotonMessage(messageObj) {
+          if (!this.websocket || this.websocket.readyState !== WebSocket.OPEN) {
+            console.warn('[Photon] Cannot send message: WebSocket not ready');
+            return false;
+          }
 
-          // Convert to Photon's message frame format
-          const jsonStr = JSON.stringify(messageObj);
-          return `~m~${jsonStr.length}~m~${jsonStr}`;
+          try {
+            // Add message ID for tracking
+            messageObj.msgId = ++this.messageId;
+
+            // Convert to Photon's message frame format
+            const jsonStr = JSON.stringify(messageObj);
+            const message = `~m~${jsonStr.length}~m~${jsonStr}`;
+
+            this.websocket.send(message);
+            return true;
+          } catch (error) {
+            console.error('[Photon] Failed to send message:', error);
+            return false;
+          }
         }
 
         setState(newState) {
@@ -323,22 +343,71 @@
 
         handleMessage(data) {
           try {
-            // Photon uses a custom binary protocol, not JSON
-            // For now, we'll just log the raw data and not try to parse it
-            console.log('[Photon] Received raw message (binary protocol):', data.substring(0, 50) + '...');
+            console.log('[Photon] Received message:', data.substring(0, 100) + '...');
 
-            // In a full implementation, you would decode the Photon binary protocol here
-            // For this gamepad controller, we primarily send events rather than receive complex data
+            // Parse Photon message frames
+            if (typeof data === 'string' && data.includes('~m~')) {
+              const messages = this.parsePhotonFrames(data);
 
-            // Simple check for common Photon message types
-            if (typeof data === 'string') {
-              if (data.includes('~m~')) {
-                // This is a Photon message frame - just acknowledge receipt
-                console.log('[Photon] Photon protocol message received');
-              }
+              messages.forEach(msg => {
+                this.processPhotonMessage(msg);
+              });
             }
           } catch (error) {
             console.error('[Photon] Error handling message:', error);
+          }
+        }
+
+        parsePhotonFrames(data) {
+          const messages = [];
+          let pos = 0;
+
+          while (pos < data.length) {
+            const frameStart = data.indexOf('~m~', pos);
+            if (frameStart === -1) break;
+
+            const lengthStart = frameStart + 3;
+            const lengthEnd = data.indexOf('~m~', lengthStart);
+            if (lengthEnd === -1) break;
+
+            const length = parseInt(data.substring(lengthStart, lengthEnd));
+            const messageStart = lengthEnd + 3;
+            const messageEnd = messageStart + length;
+
+            if (messageEnd <= data.length) {
+              const messageStr = data.substring(messageStart, messageEnd);
+              try {
+                const messageObj = JSON.parse(messageStr);
+                messages.push(messageObj);
+              } catch (e) {
+                console.warn('[Photon] Failed to parse message JSON:', messageStr);
+              }
+            }
+
+            pos = messageEnd;
+          }
+
+          return messages;
+        }
+
+        processPhotonMessage(message) {
+          console.log('[Photon] Processing message:', message);
+
+          // Handle different operation responses
+          if (message.o) {
+            switch (message.o) {
+              case 230: // Authenticate response
+                console.log('[Photon] Authentication response received');
+                break;
+              case 227: // JoinOrCreateRoom response
+                console.log('[Photon] JoinRoom response received');
+                break;
+              case 253: // RaiseEvent
+                if (this.onEvent && message.p) {
+                  this.onEvent(message.p[252], message.p[245], message.p[254]);
+                }
+                break;
+            }
           }
         }
 
@@ -359,8 +428,8 @@
         },
         Constants: {
           ReceiverGroup: {
-            All: 'All',
-            Others: 'Others'
+            All: 0,
+            Others: 1
           }
         }
       };
