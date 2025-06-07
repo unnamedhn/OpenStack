@@ -77,11 +77,6 @@
       border-color: #e74c3c;
     }
 
-    #touchButton.simulation {
-      background: linear-gradient(145deg, #f39c12, #e67e22);
-      border-color: #f39c12;
-    }
-
     @keyframes pulse {
       0% {
         box-shadow: 0 8px 32px rgba(46, 204, 113, 0.3);
@@ -165,29 +160,24 @@
   </div>
 
   <script>
-    // Enhanced Stack Gamepad with multiple connection modes
     (function () {
       'use strict';
 
       // Configuration and state
       const config = {
-        region: 'eu',
-        gameVersion: '1.0',
         maxRetries: 3,
         retryDelay: 2000,
-        simulationMode: true, // Enable simulation mode by default
-        useWebRTC: false, // Future: WebRTC P2P support
-        useWebSocket: false // Future: Custom WebSocket server
+        heartbeatInterval: 30000 // Send keepalive every 30 seconds
       };
 
       let state = {
-        client: null,
+        websocket: null,
         retryCount: 0,
         isConnected: false,
         roomName: null,
         playerId: null,
-        appId: null,
-        connectionMode: 'simulation' // 'photon', 'websocket', 'webrtc', 'simulation'
+        serverUrl: null,
+        heartbeatTimer: null
       };
 
       // DOM elements
@@ -216,7 +206,6 @@
           elements.touchButton.classList.add('error');
           setTimeout(() => {
             elements.errorMessage.style.display = 'none';
-            elements.touchButton.classList.remove('error');
           }, 5000);
         },
 
@@ -228,442 +217,225 @@
         parseUrlParams: () => {
           const params = new URLSearchParams(window.location.search);
           return {
-            appId: params.get('appId'),
+            server: params.get('server') || params.get('ws'), // Support both 'server' and 'ws' parameters
             room: params.get('room'),
-            player: parseInt(params.get('player'), 10),
-            mode: params.get('mode') || 'simulation' // Allow mode override
+            player: parseInt(params.get('player'), 10)
           };
         },
 
         validateParams: (params) => {
+          if (!params.server) {
+            throw new Error('Missing server/ws parameter - provide WebSocket URL');
+          }
           if (!params.room) {
             throw new Error('Missing room parameter');
           }
-          if (isNaN(params.player) || params.player < 0 || params.player > 2) {
-            throw new Error('Invalid player parameter (must be 0, 1, or 2)');
+          if (isNaN(params.player) || params.player < 0 || params.player > 3) {
+            throw new Error('Invalid player parameter (must be 0-3)');
           }
-          return true;
-        },
 
-        generateSessionId: () => {
-          return 'session_' + Math.random().toString(36).substr(2, 9);
+          // Validate WebSocket URL format
+          if (!params.server.startsWith('ws://') && !params.server.startsWith('wss://')) {
+            throw new Error('Server URL must start with ws:// or wss://');
+          }
+
+          return true;
         }
       };
 
-      // Simulation Mode Client - Works without external servers
-      class SimulationClient {
-        constructor(appId, gameVersion) {
-          this.appId = appId;
-          this.gameVersion = gameVersion;
-          this.state = 'Disconnected';
-          this.room = null;
-          this.sessionId = utils.generateSessionId();
-          this.isSimulation = true;
-
-          // Event callbacks
-          this.onStateChange = null;
-          this.onError = null;
-          this.onJoinRoom = null;
-          this.onLeaveRoom = null;
-          this.onEvent = null;
-        }
-
-        connectToRegionMaster(region) {
-          this.setState('Connecting');
-          utils.updateStatus('Starting simulation mode...');
-
-          // Simulate connection delay
-          setTimeout(() => {
-            this.setState('Connected');
-            setTimeout(() => {
-              this.setState('JoinedLobby');
-            }, 500);
-          }, 1000);
-        }
-
-        joinOrCreateRoom(roomName, roomOptions) {
-          console.log('[Simulation] Joining/Creating room:', roomName);
-          this.room = {
-            name: roomName,
-            options: roomOptions || {},
-            players: [state.playerId], // Simulate this player in room
-            sessionId: this.sessionId
-          };
-
-          // Simulate room join
-          setTimeout(() => {
-            this.setState('Joined');
-            if (this.onJoinRoom) {
-              this.onJoinRoom();
-            }
-          }, 800);
-        }
-
-        raiseEvent(eventCode, eventData, eventOptions) {
-          if (this.state !== 'Joined') {
-            console.warn('[Simulation] Cannot raise event: not in room');
-            return false;
-          }
-
-          console.log(`[Simulation] Event raised - Code: ${eventCode}, Data: ${eventData}`);
-
-          // In simulation mode, we can:
-          // 1. Log to console for debugging
-          // 2. Store events locally
-          // 3. Send to a custom WebSocket server if available
-          // 4. Use localStorage to communicate between multiple tabs (same room)
-
-          this.broadcastToLocalTabs(eventCode, eventData, eventOptions);
-          return true;
-        }
-
-        broadcastToLocalTabs(eventCode, eventData, eventOptions) {
-          // Use localStorage events to communicate between tabs in the same room
-          const eventMessage = {
-            type: 'gamepad_event',
-            room: this.room.name,
-            eventCode: eventCode,
-            eventData: eventData,
-            playerId: state.playerId,
-            timestamp: Date.now(),
-            sessionId: this.sessionId
-          };
-
-          try {
-            // Store event temporarily
-            const storageKey = `gamepad_events_${this.room.name}`;
-            const existingEvents = JSON.parse(localStorage.getItem(storageKey) || '[]');
-
-            // Keep only recent events (last 10)
-            existingEvents.push(eventMessage);
-            if (existingEvents.length > 10) {
-              existingEvents.shift();
-            }
-
-            localStorage.setItem(storageKey, JSON.stringify(existingEvents));
-
-            // Trigger storage event for other tabs
-            localStorage.setItem('gamepad_trigger', Date.now().toString());
-
-            console.log('[Simulation] Event broadcasted via localStorage');
-          } catch (error) {
-            console.warn('[Simulation] LocalStorage not available, using console only');
-          }
-        }
-
-        setState(newState) {
-          const oldState = this.state;
-          this.state = newState;
-          console.log(`[Simulation] State: ${oldState} → ${newState}`);
-
-          if (this.onStateChange) {
-            this.onStateChange(newState);
-          }
-        }
-
-        getState() {
-          return this.state;
-        }
-
-        disconnect() {
-          this.setState('Disconnected');
-        }
-      }
-
-      // WebSocket Client (for custom server)
-      class WebSocketClient {
-        constructor(appId, gameVersion) {
-          this.appId = appId;
-          this.gameVersion = gameVersion;
-          this.state = 'Disconnected';
-          this.websocket = null;
-          this.room = null;
-
-          // Event callbacks
-          this.onStateChange = null;
-          this.onError = null;
-          this.onJoinRoom = null;
-          this.onLeaveRoom = null;
-          this.onEvent = null;
-        }
-
-        connectToRegionMaster(region) {
-          this.setState('Connecting');
-
-          // Try to connect to a custom WebSocket server
-          // You would replace this URL with your actual server
-          const wsUrl = 'wss://your-gamepad-server.com/ws';
-
-          try {
-            this.websocket = new WebSocket(wsUrl);
-
-            this.websocket.onopen = () => {
-              console.log('[WebSocket] Connected to custom server');
-              this.setState('Connected');
-              this.authenticate();
-            };
-
-            this.websocket.onmessage = (event) => {
-              this.handleMessage(JSON.parse(event.data));
-            };
-
-            this.websocket.onerror = (error) => {
-              console.error('[WebSocket] Connection error:', error);
-              if (this.onError) {
-                this.onError('WebSocketError', 'Failed to connect to custom server');
-              }
-            };
-
-            this.websocket.onclose = () => {
-              console.log('[WebSocket] Disconnected');
-              this.setState('Disconnected');
-            };
-
-          } catch (error) {
-            if (this.onError) {
-              this.onError('ConnectionError', error.message);
-            }
-          }
-        }
-
-        authenticate() {
-          this.sendMessage({
-            type: 'authenticate',
-            appId: this.appId,
-            gameVersion: this.gameVersion
-          });
-        }
-
-        joinOrCreateRoom(roomName, roomOptions) {
-          this.sendMessage({
-            type: 'joinRoom',
-            roomName: roomName,
-            options: roomOptions,
-            playerId: state.playerId
-          });
-        }
-
-        raiseEvent(eventCode, eventData, eventOptions) {
-          return this.sendMessage({
-            type: 'raiseEvent',
-            eventCode: eventCode,
-            eventData: eventData,
-            options: eventOptions
-          });
-        }
-
-        sendMessage(message) {
-          if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
-            this.websocket.send(JSON.stringify(message));
-            return true;
-          }
-          return false;
-        }
-
-        handleMessage(message) {
-          console.log('[WebSocket] Received:', message);
-
-          switch (message.type) {
-            case 'authenticated':
-              this.setState('JoinedLobby');
-              break;
-            case 'roomJoined':
-              this.setState('Joined');
-              if (this.onJoinRoom) this.onJoinRoom();
-              break;
-            case 'event':
-              if (this.onEvent) {
-                this.onEvent(message.eventCode, message.eventData, message.playerId);
-              }
-              break;
-          }
-        }
-
-        setState(newState) {
-          const oldState = this.state;
-          this.state = newState;
-          console.log(`[WebSocket] State: ${oldState} → ${newState}`);
-
-          if (this.onStateChange) {
-            this.onStateChange(newState);
-          }
-        }
-
-        getState() {
-          return this.state;
-        }
-
-        disconnect() {
-          if (this.websocket) {
-            this.websocket.close();
-          }
-        }
-      }
-
-      // Connection manager
+      // WebSocket connection management
       const connectionManager = {
-        createClient: (mode, appId, gameVersion) => {
-          switch (mode) {
-            case 'websocket':
-              return new WebSocketClient(appId, gameVersion);
-            case 'simulation':
-            default:
-              return new SimulationClient(appId, gameVersion);
-          }
-        },
-
-        init: (mode, appId, gameVersion) => {
-          try {
-            state.client = connectionManager.createClient(mode, appId, gameVersion);
-            state.connectionMode = mode;
-
-            connectionManager.setupEventHandlers();
-
-            const modeText = mode === 'simulation' ? 'Simulation Mode' : 'WebSocket Mode';
-            utils.updateStatus(`${modeText} initialized`);
-            return true;
-          } catch (error) {
-            utils.showError(`Failed to initialize client: ${error.message}`);
-            return false;
-          }
-        },
-
-        setupEventHandlers: () => {
-          const client = state.client;
-
-          client.onStateChange = (state_code) => {
-            console.log(`[${state.connectionMode}] State changed to:`, state_code);
-
-            switch (state_code) {
-              case 'JoinedLobby':
-                utils.updateStatus('Ready, joining room...');
-                connectionManager.joinOrCreateRoom();
-                break;
-
-              case 'Joined':
-                state.isConnected = true;
-                const modePrefix = state.connectionMode === 'simulation' ? 'SIM' : 'LIVE';
-                utils.updateStatus(`${modePrefix}: Connected to ${state.roomName}`);
-                const className = state.connectionMode === 'simulation' ? 'simulation' : 'connected';
-                utils.updateButtonState(`READY TO STACK\nPLAYER ${state.playerId}\n(${modePrefix})`, className);
-                break;
-
-              case 'Disconnected':
-                state.isConnected = false;
-                utils.updateStatus('Disconnected');
-                connectionManager.handleDisconnection();
-                break;
-
-              case 'Connecting':
-                utils.updateStatus('Connecting...');
-                break;
-
-              case 'Connected':
-                utils.updateStatus('Connected, authenticating...');
-                break;
-            }
-          };
-
-          client.onError = (errorCode, errorMsg) => {
-            console.error(`[${state.connectionMode}] Error:`, errorCode, errorMsg);
-            utils.showError(`Error: ${errorMsg || errorCode}`);
-          };
-
-          client.onJoinRoom = () => {
-            console.log(`[${state.connectionMode}] Successfully joined room`);
-          };
-
-          client.onEvent = (code, content, playerId) => {
-            console.log(`[${state.connectionMode}] Received event:`, { code, content, playerId });
-          };
-        },
-
         connect: () => {
           try {
-            state.client.connectToRegionMaster(config.region);
+            utils.updateStatus('Connecting to game server...');
+
+            state.websocket = new WebSocket(state.serverUrl);
+
+            state.websocket.onopen = () => {
+              console.log('[WebSocket] Connected to server');
+              utils.updateStatus('Connected! Joining room...');
+
+              // Send join room message
+              connectionManager.joinRoom();
+
+              // Start heartbeat
+              connectionManager.startHeartbeat();
+            };
+
+            state.websocket.onmessage = (event) => {
+              connectionManager.handleMessage(event.data);
+            };
+
+            state.websocket.onerror = (error) => {
+              console.error('[WebSocket] Connection error:', error);
+              utils.showError('Connection failed - check server URL');
+            };
+
+            state.websocket.onclose = (event) => {
+              console.log('[WebSocket] Connection closed:', event.code, event.reason);
+              state.isConnected = false;
+              connectionManager.stopHeartbeat();
+
+              if (event.code !== 1000) { // Not a normal closure
+                connectionManager.handleDisconnection();
+              }
+            };
+
           } catch (error) {
+            console.error('[WebSocket] Failed to create connection:', error);
             utils.showError(`Connection failed: ${error.message}`);
           }
         },
 
-        joinOrCreateRoom: () => {
-          try {
-            const roomOptions = {
-              maxPlayers: 3,
-              isVisible: true,
-              isOpen: true
-            };
+        joinRoom: () => {
+          const joinMessage = {
+            type: 'join',
+            room: state.roomName,
+            player: state.playerId,
+            timestamp: Date.now()
+          };
 
-            state.client.joinOrCreateRoom(state.roomName, roomOptions);
+          connectionManager.sendMessage(joinMessage);
+          console.log('[WebSocket] Sent join room message');
+        },
+
+        sendMessage: (message) => {
+          if (!state.websocket || state.websocket.readyState !== WebSocket.OPEN) {
+            console.warn('[WebSocket] Cannot send message: connection not ready');
+            return false;
+          }
+
+          try {
+            const messageStr = JSON.stringify(message);
+            state.websocket.send(messageStr);
+            return true;
           } catch (error) {
-            utils.showError(`Failed to join room: ${error.message}`);
+            console.error('[WebSocket] Failed to send message:', error);
+            return false;
+          }
+        },
+
+        handleMessage: (data) => {
+          try {
+            const message = JSON.parse(data);
+            console.log('[WebSocket] Received message:', message);
+
+            switch (message.type) {
+              case 'joined':
+                state.isConnected = true;
+                utils.updateStatus(`Connected to room: ${state.roomName}`);
+                utils.updateButtonState(`READY TO STACK\nPLAYER ${state.playerId}`, 'connected');
+                state.retryCount = 0; // Reset retry count on successful connection
+                break;
+
+              case 'error':
+                utils.showError(`Server error: ${message.message || 'Unknown error'}`);
+                break;
+
+              case 'roomFull':
+                utils.showError('Room is full - cannot join');
+                break;
+
+              case 'pong':
+                console.log('[WebSocket] Received pong - connection alive');
+                break;
+
+              default:
+                console.log('[WebSocket] Unknown message type:', message.type);
+            }
+          } catch (error) {
+            console.error('[WebSocket] Failed to parse message:', data, error);
           }
         },
 
         sendTapEvent: () => {
           if (!state.isConnected) {
-            console.warn('[Client] Tap ignored: not connected');
+            console.warn('[WebSocket] Tap ignored: not connected to room');
             return false;
           }
 
-          try {
-            const success = state.client.raiseEvent(
-              1, // Event code for button press
-              state.playerId, // Player ID as event data
-              { receivers: 'All', sendReliable: false }
-            );
+          const tapMessage = {
+            type: 'tap',
+            player: state.playerId,
+            room: state.roomName,
+            timestamp: Date.now()
+          };
 
-            if (success) {
-              console.log(`[Client] Sent tap event for player ${state.playerId}`);
+          const success = connectionManager.sendMessage(tapMessage);
 
-              // Visual feedback
-              elements.touchButton.style.transform = 'scale(0.95)';
-              setTimeout(() => {
-                elements.touchButton.style.transform = '';
-              }, 100);
+          if (success) {
+            console.log(`[WebSocket] Sent tap event for player ${state.playerId}`);
+
+            // Visual feedback
+            elements.touchButton.style.transform = 'scale(0.95)';
+            setTimeout(() => {
+              elements.touchButton.style.transform = '';
+            }, 100);
+          }
+
+          return success;
+        },
+
+        startHeartbeat: () => {
+          connectionManager.stopHeartbeat(); // Clear any existing timer
+
+          state.heartbeatTimer = setInterval(() => {
+            if (state.websocket && state.websocket.readyState === WebSocket.OPEN) {
+              connectionManager.sendMessage({ type: 'ping', timestamp: Date.now() });
             }
+          }, config.heartbeatInterval);
+        },
 
-            return success;
-          } catch (error) {
-            utils.showError(`Failed to send tap: ${error.message}`);
-            return false;
+        stopHeartbeat: () => {
+          if (state.heartbeatTimer) {
+            clearInterval(state.heartbeatTimer);
+            state.heartbeatTimer = null;
           }
         },
 
         handleDisconnection: () => {
-          if (state.connectionMode === 'simulation') {
-            // Simulation mode doesn't really disconnect, try to reconnect immediately
-            setTimeout(() => {
-              connectionManager.connect();
-            }, 1000);
-            return;
-          }
+          utils.updateButtonState('TAP TO STACK', '');
 
           if (state.retryCount < config.maxRetries) {
             state.retryCount++;
-            utils.updateStatus(`Reconnecting... (${state.retryCount}/${config.maxRetries})`);
+            utils.updateStatus(`Connection lost. Retrying... (${state.retryCount}/${config.maxRetries})`);
 
             setTimeout(() => {
               connectionManager.connect();
             }, config.retryDelay);
           } else {
-            utils.showError('Connection failed. Please refresh the page.');
+            utils.showError('Maximum retry attempts reached. Please refresh the page.');
             utils.updateButtonState('CONNECTION FAILED\nREFRESH PAGE', 'error');
           }
+        },
+
+        disconnect: () => {
+          connectionManager.stopHeartbeat();
+
+          if (state.websocket) {
+            state.websocket.close(1000, 'Client disconnecting');
+            state.websocket = null;
+          }
+
+          state.isConnected = false;
         }
       };
 
       // Input handling
       const inputManager = {
         init: () => {
+          // Add event listeners for both touch and mouse
           elements.touchButton.addEventListener('touchstart', inputManager.handleTap, { passive: false });
           elements.touchButton.addEventListener('mousedown', inputManager.handleTap);
+
+          // Prevent context menu on long press
           elements.touchButton.addEventListener('contextmenu', (e) => e.preventDefault());
         },
 
         handleTap: (event) => {
           event.preventDefault();
           event.stopPropagation();
+
           connectionManager.sendTapEvent();
         }
       };
@@ -671,36 +443,24 @@
       // Main initialization
       const init = async () => {
         try {
+          // Parse and validate URL parameters
           const params = utils.parseUrlParams();
           utils.validateParams(params);
 
           // Store configuration
-          state.appId = params.appId || 'simulation';
+          state.serverUrl = params.server;
           state.roomName = params.room;
           state.playerId = params.player;
 
-          // Determine connection mode
-          let connectionMode = params.mode;
-          if (!connectionMode) {
-            // Auto-detect best mode
-            if (params.appId && params.appId.length > 10) {
-              connectionMode = 'websocket'; // Try WebSocket first if appId provided
-            } else {
-              connectionMode = 'simulation';
-            }
-          }
+          utils.updateStatus('Validating parameters...');
 
-          utils.updateStatus('Initializing...');
-
+          // Wait a bit for DOM to be fully ready
           await new Promise(resolve => setTimeout(resolve, 100));
 
-          if (!connectionManager.init(connectionMode, state.appId, config.gameVersion)) {
-            // Fallback to simulation mode
-            console.log('[Init] Falling back to simulation mode');
-            connectionManager.init('simulation', state.appId, config.gameVersion);
-          }
-
+          // Initialize input handling
           inputManager.init();
+
+          // Start connection
           connectionManager.connect();
 
         } catch (error) {
@@ -709,25 +469,22 @@
         }
       };
 
-      // Event listeners
+      // Handle page visibility changes
       document.addEventListener('visibilitychange', () => {
-        if (!document.hidden && !state.isConnected && state.client) {
-          connectionManager.connect();
+        if (document.hidden) {
+          console.log('[App] Page hidden');
+        } else {
+          console.log('[App] Page visible');
+          // Reconnect if disconnected
+          if (!state.isConnected && state.serverUrl && !state.websocket) {
+            connectionManager.connect();
+          }
         }
       });
 
+      // Handle page unload
       window.addEventListener('beforeunload', () => {
-        if (state.client && state.isConnected) {
-          state.client.disconnect();
-        }
-      });
-
-      // Listen for localStorage events (for simulation mode)
-      window.addEventListener('storage', (e) => {
-        if (e.key === 'gamepad_trigger' && state.connectionMode === 'simulation') {
-          // Another tab sent an event - we could handle it here
-          console.log('[Simulation] Cross-tab event detected');
-        }
+        connectionManager.disconnect();
       });
 
       // Start the application
