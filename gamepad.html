@@ -37,8 +37,11 @@
 <body>
   <div id="touchButton">TAP TO STACK</div>
 
-  <!-- 1) Load Photon Realtime v5.1.5 UMD build (browser-ready) -->
-  <script src="https://cdn.jsdelivr.net/npm/photon-realtime@5.1.5/build/photon-realtime.umd.min.js"></script>
+  <!--
+    1) Load Photon Realtime v5.1.5 UMD build (true browser‐ready bundle).
+       We’re using unpkg.com here. This will expose `window.PhotonRealtime`.
+  -->
+  <script src="https://unpkg.com/photon-realtime@5.1.5/build/photon-realtime.umd.min.js"></script>
   <script>
     (function () {
       // 2) Parse URL parameters: ?appId=…&room=…&player=…
@@ -54,14 +57,15 @@
         return;
       }
 
-      // 3) Create a LoadBalancingClient (v5.x namespace is PhotonRealtime)
-      const region = "eu"; // Match exactly the region you used in Unity (e.g. "eu", "us", etc.)
+      // 3) Create a LoadBalancingClient (v5.x namespace = PhotonRealtime)
+      //    PhotonRealtime.ConnectionProtocol.Udp → Use the same protocol you used in Unity.
+      const region = "eu";  // Must match the “FixedRegion” you used in Unity (e.g. "eu" or "us").
       const client = new PhotonRealtime.LoadBalancingClient(
         PhotonRealtime.ConnectionProtocol.Udp
       );
       client.setLogLevel(PhotonRealtime.DebugLevel.WARNING);
 
-      // 4) Register callback targets
+      // 4) Hook up the callbacks
       client.addCallbackTarget({
         onConnected: () => {
           console.log("[JS] onConnected()");
@@ -84,11 +88,11 @@
           console.error("[JS] Photon Error:", errorCode, errorMsg);
         },
         onEvent: (evData) => {
-          // We do not need to handle incoming events for this “gamepad” page.
+          // We don’t need to handle incoming events on the “gamepad” side.
         }
       });
 
-      // 5) Connect to Photon Cloud using settings
+      // 5) Connect to Photon Cloud
       client.connectUsingSettings({
         AppIdRealtime: appIdParam,
         AppVersion: "1.0",
@@ -102,18 +106,19 @@
 
       function sendTap(evt) {
         evt.preventDefault();
+        // Only send if we’re already in the room
         if (client.getState() !== PhotonRealtime.ClientState.Joined) {
           console.warn("[JS] Tried to tap before joining room.");
           return;
         }
-        // Event code 1 means “button press.” Content is simply the integer player index.
+        // EventCode = 1 means “button press.” Content is the integer player index (0, 1, or 2).
         client.raiseEvent(
           /* eventCode = */ 1,
-          /* content   = */ playerParam,
-          /* options   = */ new PhotonRealtime.RaiseEventOptions({
+          /*   content = */ playerParam,
+          /*   options = */ new PhotonRealtime.RaiseEventOptions({
           Receivers: PhotonRealtime.ReceiverGroup.All
         }),
-          /* sendOpts  = */ new PhotonRealtime.SendOptions({ Reliability: true })
+          /*   sendOpts = */ new PhotonRealtime.SendOptions({ Reliability: true })
         );
       }
     })();
