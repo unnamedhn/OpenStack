@@ -71,8 +71,8 @@
       line-height: 1.1;
       padding: 0.5em;
       box-sizing: border-box;
-      display: block;
-      /* Change to "none" to hide debug logs */
+      display: none;
+      /* Change to "block" to see debug logs */
     }
 
     #logArea div {
@@ -89,7 +89,7 @@
   </div>
 
   <!-- Photon Realtime JS SDK v4.3.2 -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/photon/4.3.2/photon.min.js"></script>
+  <script src="lib/photon.js"></script>
   <script>
     (function () {
       //────────────────────────────────────────────────────────────────────────
@@ -98,7 +98,7 @@
       function logDebug(msg, ...args) {
         console.log(msg, ...args);
         const logArea = document.getElementById("logArea");
-        if (logArea && logArea.style.display === "block") {
+        if (logArea.style.display === "block") {
           const line = document.createElement("div");
           line.textContent = "[JS] " + msg + (args.length ? " " + args.join(" ") : "");
           logArea.appendChild(line);
@@ -144,8 +144,6 @@
       if (client.setLogLevel) {
         client.setLogLevel(Photon.LogLevel.INFO);
       }
-
-      logDebug("Client created with AppId:", appIdParam, "Room:", roomParam, "Player:", playerIndex);
 
       //────────────────────────────────────────────────────────────────────────
       // 4) onStateChange: update #statusText with a readable state
@@ -196,7 +194,6 @@
         logDebug("Connected to NameServer, now connecting to region master 'eu'");
         // Connect to EU region master server
         const result = client.connectToRegionMaster("eu");
-        logDebug("connectToRegionMaster result:", result);
         if (!result) {
           console.error("Failed to connect to region master");
           statusText.textContent = "❌ Failed to connect to region";
@@ -207,7 +204,7 @@
       client.onConnectedToMaster = function () {
         logDebug("Connected to Master server, attempting to join/create room:", roomParam);
 
-        // Try to join the room first
+        // Use joinRoom with createIfNotExists option
         const joinResult = client.joinRoom(roomParam, {
           createIfNotExists: true
         }, {
@@ -216,7 +213,6 @@
           isOpen: true
         });
 
-        logDebug("joinRoom result:", joinResult);
         if (!joinResult) {
           console.error("Failed to send join room request");
           statusText.textContent = "❌ Failed to join room";
@@ -228,22 +224,22 @@
       //────────────────────────────────────────────────────────────────────────
       client.onJoinRoom = function (createdByMe) {
         logDebug("onJoinRoom → joined", roomParam, "created by me:", createdByMe);
-        statusText.textContent = `✅ Joined Room "${roomParam}"\nPLAYER ${playerIndex}`;
       };
 
       //────────────────────────────────────────────────────────────────────────
       // 7) Handle operation responses for better error handling
       //────────────────────────────────────────────────────────────────────────
       client.onOperationResponse = function (errorCode, errorMsg, code, content) {
-        logDebug("onOperationResponse:", "code:", code, "errorCode:", errorCode, "errorMsg:", errorMsg);
-
         if (errorCode !== 0) {
           console.error("Operation failed:", code, "Error:", errorCode, errorMsg);
+          logDebug("Operation error:", code, errorCode, errorMsg);
 
           // Handle specific join room failures
           if (code === Photon.LoadBalancing.Constants.OperationCode.JoinGame) {
             statusText.textContent = `❌ Failed to join "${roomParam}"\nError: ${errorMsg}`;
           }
+        } else {
+          logDebug("Operation success:", code);
         }
       };
 
@@ -257,38 +253,27 @@
       };
 
       //────────────────────────────────────────────────────────────────────────
-      // 9) Additional event handlers for debugging
-      //────────────────────────────────────────────────────────────────────────
-      client.onEvent = function (code, content, actorNr) {
-        logDebug("Received event:", code, "from actor:", actorNr, "content:", content);
-      };
-
-      //────────────────────────────────────────────────────────────────────────
-      // 10) Start connection - connect to NameServer first
+      // 9) Start connection - connect to NameServer first
       //────────────────────────────────────────────────────────────────────────
       logDebug("Starting connection to NameServer...");
-
-      // Use connect() method instead of connectToNameServer() for better compatibility
-      const connectResult = client.connect({
-        region: "eu",
-        keepMasterConnection: false
+      const connectResult = client.connectToNameServer({
+        region: "eu"
       });
 
-      logDebug("connect result:", connectResult);
       if (!connectResult) {
-        console.error("Failed to start connection");
+        console.error("Failed to start connection to NameServer");
         statusText.textContent = "❌ Failed to start connection";
       }
 
       //────────────────────────────────────────────────────────────────────────
-      // 11) On tap/click: send RaiseEvent(eventCode=1, content=playerIndex)
+      // 10) On tap/click: send RaiseEvent(eventCode=1, content=playerIndex)
       //      (Only if client is joined to room)
       //────────────────────────────────────────────────────────────────────────
       function sendTap(evt) {
         evt.preventDefault();
 
         if (!client.isJoinedToRoom()) {
-          logDebug("Tap attempted before joining room. Current state:", client.state());
+          console.warn("Tap attempted before joining room. Current state:", client.state());
           return;
         }
 
@@ -310,21 +295,11 @@
       touchDiv.addEventListener("mousedown", sendTap);
 
       //────────────────────────────────────────────────────────────────────────
-      // 12) Prevent context menu on long‐press
+      // 11) Prevent context menu on long‐press
       //────────────────────────────────────────────────────────────────────────
       window.addEventListener("contextmenu", function (e) {
         e.preventDefault();
       });
-
-      //────────────────────────────────────────────────────────────────────────
-      // 13) Service the client regularly
-      //────────────────────────────────────────────────────────────────────────
-      setInterval(function () {
-        if (client && client.service) {
-          client.service();
-        }
-      }, 50); // Service every 50ms
-
     })();
   </script>
 </body>
