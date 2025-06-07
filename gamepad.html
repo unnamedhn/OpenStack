@@ -197,8 +197,6 @@
               console.log('[Photon] WebSocket connected');
               this.setState('Connected');
 
-              // Send authentication message to Photon
-              this.sendAuthentication();
             };
 
             this.websocket.onmessage = (event) => {
@@ -392,6 +390,14 @@
 
         processPhotonMessage(message) {
           console.log('[Photon] Processing message:', message);
+
+
+          // If the NameServer just sent InitResponse, now we authenticate:
+          if (message.msg === 'InitResponse') {
+            console.log('[Photon] InitResponse received → sending Authenticate');
+            this.sendAuthentication();
+            return;
+          }
 
           // Handle different operation responses
           if (message.o) {
