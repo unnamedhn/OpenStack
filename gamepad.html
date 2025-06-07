@@ -195,10 +195,9 @@
             this.websocket.onopen = () => {
               console.log('[Photon] WebSocket connected');
               this.setState('Connected');
-              // Simulate joining lobby after connection
-              setTimeout(() => {
-                this.setState('JoinedLobby');
-              }, 500);
+
+              // Send authentication message to Photon
+              this.sendAuthentication();
             };
 
             this.websocket.onmessage = (event) => {
@@ -232,13 +231,16 @@
             options: roomOptions || {}
           };
 
-          // Simulate successful room join
+          // Send the actual join room message using Photon protocol
+          this.sendJoinRoom(roomName, roomOptions);
+
+          // Simulate successful room join after a delay
           setTimeout(() => {
             this.setState('Joined');
             if (this.onJoinRoom) {
               this.onJoinRoom();
             }
-          }, 300);
+          }, 1500);
         }
 
         raiseEvent(eventCode, eventData, eventOptions) {
@@ -247,22 +249,62 @@
             return false;
           }
 
-          const message = {
-            type: 'event',
-            code: eventCode,
-            data: eventData,
-            options: eventOptions || {}
-          };
+          // For Photon's binary protocol, we need to format the message properly
+          // This is a simplified approach - in reality, Photon uses complex binary encoding
+          const message = this.encodePhotonMessage(eventCode, eventData, eventOptions);
 
           // Send via WebSocket if available
           if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
-            this.websocket.send(JSON.stringify(message));
-            console.log('[Photon] Event sent:', message);
+            this.websocket.send(message);
+            console.log('[Photon] Event sent - Code:', eventCode, 'Data:', eventData);
           } else {
-            console.log('[Photon] Event simulated (no connection):', message);
+            console.log('[Photon] Event simulated (no connection) - Code:', eventCode, 'Data:', eventData);
           }
 
           return true;
+        }
+
+        sendAuthentication() {
+          // Send authentication message to Photon
+          const authMessage = {
+            o: 230, // Authenticate operation
+            p: {
+              220: this.appId, // App ID
+              221: this.gameVersion, // Game version
+              222: "JavaScript", // SDK ID
+              223: "1.0.0" // SDK version
+            }
+          };
+
+          const jsonStr = JSON.stringify(authMessage);
+          const message = `~m~${jsonStr.length}~m~${jsonStr}`;
+
+          if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+            this.websocket.send(message);
+            console.log('[Photon] Authentication sent');
+
+            // Simulate successful authentication and lobby join
+            setTimeout(() => {
+              this.setState('JoinedLobby');
+            }, 1000);
+          }
+        }
+
+        encodePhotonMessage(eventCode, eventData, eventOptions) {
+          // This is a simplified encoding for Photon's protocol
+          // In reality, Photon uses a complex binary protocol
+          const messageObj = {
+            o: 253, // Operation code for RaiseEvent
+            p: {
+              252: eventCode, // Event code parameter
+              245: eventData, // Event data parameter
+              254: eventOptions?.receivers || 0 // Receiver group
+            }
+          };
+
+          // Convert to Photon's message frame format
+          const jsonStr = JSON.stringify(messageObj);
+          return `~m~${jsonStr.length}~m~${jsonStr}`;
         }
 
         setState(newState) {
@@ -281,14 +323,22 @@
 
         handleMessage(data) {
           try {
-            const message = JSON.parse(data);
-            console.log('[Photon] Received message:', message);
+            // Photon uses a custom binary protocol, not JSON
+            // For now, we'll just log the raw data and not try to parse it
+            console.log('[Photon] Received raw message (binary protocol):', data.substring(0, 50) + '...');
 
-            if (message.type === 'event' && this.onEvent) {
-              this.onEvent(message.code, message.data, message.actorNr);
+            // In a full implementation, you would decode the Photon binary protocol here
+            // For this gamepad controller, we primarily send events rather than receive complex data
+
+            // Simple check for common Photon message types
+            if (typeof data === 'string') {
+              if (data.includes('~m~')) {
+                // This is a Photon message frame - just acknowledge receipt
+                console.log('[Photon] Photon protocol message received');
+              }
             }
           } catch (error) {
-            console.error('[Photon] Failed to parse message:', error);
+            console.error('[Photon] Error handling message:', error);
           }
         }
 
