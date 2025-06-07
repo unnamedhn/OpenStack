@@ -227,9 +227,9 @@
 
       // Handle successful connection to NameServer
       client.onConnectedToNameServer = function () {
-        logDebug("Connected to NameServer, now connecting to region master 'eu'");
+        logDebug("Connected to NameServer, now connecting to region master 'asia'");
         // Connect to EU region master server
-        const result = client.connectToRegionMaster("eu");
+        const result = client.connectToRegionMaster("asia");
         if (!result) {
           console.error("Failed to connect to region master");
           statusText.textContent = "❌ Failed to connect to region";
