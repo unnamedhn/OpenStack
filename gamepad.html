@@ -57,6 +57,11 @@
       font-size: 8vw;
       color: #fff;
       user-select: none;
+      transition: background-color 0.1s ease;
+    }
+
+    #touchButton:active {
+      background-color: #444;
     }
 
     /* (Optional) Debug log area at bottom */
@@ -187,7 +192,7 @@
         statusText.textContent = displayText;
         logDebug("onStateChange →", stateName, "| Display:", displayText.replace(/\n/g, " | "));
 
-        // FIXED: Join room when we reach JoinedLobby state
+        // Join room when we reach JoinedLobby state
         if (state === Photon.LoadBalancing.LoadBalancingClient.State.JoinedLobby) {
           attemptJoinRoom();
         }
@@ -231,7 +236,7 @@
         }
       };
 
-      // Handle successful connection to Master server (removed room joining logic from here)
+      // Handle successful connection to Master server
       client.onConnectedToMaster = function () {
         logDebug("Connected to Master server, waiting to join lobby...");
       };
@@ -294,17 +299,32 @@
           return;
         }
 
+        // Ensure we send an integer (not a string or other type)
+        const playerData = parseInt(playerIndex, 10);
+
+        logDebug("Sending tap event with data:", playerData, "type:", typeof playerData);
+
         // Use the correct raiseEvent API
-        client.raiseEvent(
+        const result = client.raiseEvent(
           1,           // eventCode
-          playerIndex, // data
+          playerData,  // data - explicitly as integer
           {            // options
             receivers: Photon.LoadBalancing.Constants.ReceiverGroup.All,
             cache: Photon.LoadBalancing.Constants.EventCaching.DoNotCache
           }
         );
 
-        logDebug("Sent tap (event=1) for player", playerIndex);
+        if (result) {
+          logDebug("Sent tap (event=1) for player", playerIndex);
+
+          // Visual feedback
+          touchDiv.style.backgroundColor = "#555";
+          setTimeout(() => {
+            touchDiv.style.backgroundColor = "#222";
+          }, 100);
+        } else {
+          console.error("Failed to send tap event");
+        }
       }
 
       // Hook both touchstart and mousedown for mobile & desktop
@@ -317,6 +337,31 @@
       window.addEventListener("contextmenu", function (e) {
         e.preventDefault();
       });
+
+      //────────────────────────────────────────────────────────────────────────
+      // 13) Prevent double-tap zoom on mobile
+      //────────────────────────────────────────────────────────────────────────
+      let lastTouchEnd = 0;
+      touchDiv.addEventListener('touchend', function (event) {
+        const now = (new Date()).getTime();
+        if (now - lastTouchEnd <= 300) {
+          event.preventDefault();
+        }
+        lastTouchEnd = now;
+      }, false);
+
+      //────────────────────────────────────────────────────────────────────────
+      // 14) Handle page visibility changes
+      //────────────────────────────────────────────────────────────────────────
+      document.addEventListener('visibilitychange', function () {
+        if (document.hidden) {
+          logDebug("Page became hidden");
+        } else {
+          logDebug("Page became visible");
+          // Optionally reconnect if needed
+        }
+      });
+
     })();
   </script>
 </body>
