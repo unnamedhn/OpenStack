@@ -72,7 +72,7 @@
       padding: 0.5em;
       box-sizing: border-box;
       display: none;
-      /* Change to “block” to see debug logs */
+      /* Change to "block" to see debug logs */
     }
 
     #logArea div {
@@ -142,7 +142,7 @@
       client.logger = new Photon.Logger("GamepadJS");
       client.logger.setLevel(Photon.LogLevel.INFO);
 
-      // Disable the built‐in “join default lobby” step
+      // Disable the built‐in "join default lobby" step
       client.autoJoinLobby = false;
 
       //────────────────────────────────────────────────────────────────────────
@@ -186,38 +186,55 @@
       };
 
       //────────────────────────────────────────────────────────────────────────
-      // 5) onConnectedToMaster: use opJoinOrCreateRoom(...) to skip lobby
+      // 5) onConnectedToMaster: use joinRoom with createOptions to join or create
       //────────────────────────────────────────────────────────────────────────
       client.onConnectedToMaster = function () {
-        logDebug("onConnectedToMaster → calling opJoinOrCreateRoom:", roomParam);
+        logDebug("onConnectedToMaster → calling joinRoom:", roomParam);
 
-        // Construct RoomOptions exactly as in Unity’s EnterRoomParams
-        const enterParams = {
-          RoomName: roomParam,
-          RoomOptions: new Photon.LoadBalancing.RoomOptions({ MaxPlayers: 10 })
-        };
+        // Use joinRoom with createOptions to join existing room or create if it doesn't exist
+        const success = client.joinRoom(roomParam, {}, {
+          MaxPlayers: 10,
+          IsVisible: true,
+          IsOpen: true
+        });
 
-        client.opJoinOrCreateRoom(enterParams);
+        if (!success) {
+          logDebug("joinRoom call failed");
+          statusText.textContent = "❌ Failed to initiate room join";
+        }
       };
 
       //────────────────────────────────────────────────────────────────────────
-      // 6) onJoinedRoom: no extra action needed (status is updated above)
+      // 6) onJoinRoom: called when successfully joined a room
       //────────────────────────────────────────────────────────────────────────
-      client.onJoinedRoom = function () {
-        logDebug("onJoinedRoom → joined", roomParam);
+      client.onJoinRoom = function (createdByMe) {
+        logDebug("onJoinRoom → joined", roomParam, "createdByMe:", createdByMe);
       };
 
       //────────────────────────────────────────────────────────────────────────
-      // 7) onJoinRoomFailed: display an error if the join/Create fails
+      // 7) onJoinRoomFailed: display an error if the join fails
       //────────────────────────────────────────────────────────────────────────
       client.onJoinRoomFailed = function (returnCode, errorMsg) {
         console.error("onJoinRoomFailed(", returnCode, "):", errorMsg);
+        logDebug("onJoinRoomFailed:", returnCode, errorMsg);
         statusText.textContent =
           `❌ Failed to join "${roomParam}"\nError: ${errorMsg}`;
       };
 
       //────────────────────────────────────────────────────────────────────────
-      // 8) onError: generic error handler
+      // 8) onOperationResponse: handle operation responses for debugging
+      //────────────────────────────────────────────────────────────────────────
+      client.onOperationResponse = function (errorCode, errorMsg, code, content) {
+        if (errorCode !== 0) {
+          logDebug("Operation error:", code, "errorCode:", errorCode, "errorMsg:", errorMsg);
+          console.error("Operation error:", code, "errorCode:", errorCode, "errorMsg:", errorMsg);
+        } else {
+          logDebug("Operation success:", code);
+        }
+      };
+
+      //────────────────────────────────────────────────────────────────────────
+      // 9) onError: generic error handler
       //────────────────────────────────────────────────────────────────────────
       client.onError = function (errorCode, errorMsg) {
         console.error("Photon Error:", errorCode, errorMsg);
@@ -229,13 +246,13 @@
       };
 
       //────────────────────────────────────────────────────────────────────────
-      // 9) Connect to the EU region Master server (secure WebSocket)
+      // 10) Connect to the EU region Master server (secure WebSocket)
       //────────────────────────────────────────────────────────────────────────
       logDebug("Calling connectToRegionMaster('eu') …");
       client.connectToRegionMaster("eu");
 
       //────────────────────────────────────────────────────────────────────────
-      // 10) On tap/click: send RaiseEvent(eventCode=1, content=playerIndex)
+      // 11) On tap/click: send RaiseEvent(eventCode=1, content=playerIndex)
       //      (Only if client.state === JoinedToRoom)
       //────────────────────────────────────────────────────────────────────────
       function sendTap(evt) {
@@ -262,7 +279,7 @@
       touchDiv.addEventListener("mousedown", sendTap);
 
       //────────────────────────────────────────────────────────────────────────
-      // 11) Prevent context menu on long‐press
+      // 12) Prevent context menu on long‐press
       //────────────────────────────────────────────────────────────────────────
       window.addEventListener("contextmenu", function (e) {
         e.preventDefault();
