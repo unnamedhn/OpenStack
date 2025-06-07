@@ -37,11 +37,11 @@
 <body>
   <div id="touchButton">TAP TO STACK</div>
 
-  <!-- Photon Realtime JavaScript SDK from CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/photon-realtime@4.3.2/photon-realtime-module.js"></script>
+  <!-- 1) Load Photon Realtime v5.1.5 UMD build (browser-ready) -->
+  <script src="https://cdn.jsdelivr.net/npm/photon-realtime@5.1.5/build/photon-realtime.umd.min.js"></script>
   <script>
     (function () {
-      // 1) Parse URL parameters
+      // 2) Parse URL parameters: ?appId=…&room=…&player=…
       const params = new URLSearchParams(window.location.search);
       const appIdParam = params.get("appId");
       const roomParam = params.get("room");
@@ -54,22 +54,24 @@
         return;
       }
 
-      // 2) Create a LoadBalancingClient and connect
-      const region = "eu"; // Must match the Unity host’s region
-      const client = new Photon.Realtime.LoadBalancingClient(
-        Photon.Realtime.ConnectionProtocol.Udp
+      // 3) Create a LoadBalancingClient (v5.x namespace is PhotonRealtime)
+      const region = "eu"; // Match exactly the region you used in Unity (e.g. "eu", "us", etc.)
+      const client = new PhotonRealtime.LoadBalancingClient(
+        PhotonRealtime.ConnectionProtocol.Udp
       );
-      client.setLogLevel(Photon.Realtime.DebugLevel.WARNING);
+      client.setLogLevel(PhotonRealtime.DebugLevel.WARNING);
 
-      // Hook up callbacks
+      // 4) Register callback targets
       client.addCallbackTarget({
-        onConnected: () => console.log("[JS] onConnected"),
+        onConnected: () => {
+          console.log("[JS] onConnected()");
+        },
         onConnectedToMaster: () => {
           console.log("[JS] onConnectedToMaster → joining room:", roomParam);
           client.joinRoom(roomParam);
         },
         onJoinRoomFailed: (code, msg) => {
-          console.error("[JS] onJoinRoomFailed(", code, "): ", msg);
+          console.error(`[JS] onJoinRoomFailed(${code}): ${msg}`);
           document.getElementById("touchButton").innerText =
             "Failed to join room.\nCheck console.";
         },
@@ -82,38 +84,37 @@
           console.error("[JS] Photon Error:", errorCode, errorMsg);
         },
         onEvent: (evData) => {
-          // Clients likely don’t need to receive any events; we only send button presses.
+          // We do not need to handle incoming events for this “gamepad” page.
         }
       });
 
-      // 3) Connect using settings
+      // 5) Connect to Photon Cloud using settings
       client.connectUsingSettings({
         AppIdRealtime: appIdParam,
         AppVersion: "1.0",
         FixedRegion: region
       });
 
-      // 4) On “touchstart” (or “mousedown”), send a RaiseEvent
+      // 6) On “touchstart” (mobile) or “mousedown” (desktop), send a RaiseEvent
       const buttonDiv = document.getElementById("touchButton");
       buttonDiv.addEventListener("touchstart", sendTap, { passive: false });
       buttonDiv.addEventListener("mousedown", sendTap);
 
       function sendTap(evt) {
         evt.preventDefault();
-        if (client.getState() !== Photon.Realtime.ClientState.Joined) {
-          console.warn("[JS] tried to tap before joining room.");
+        if (client.getState() !== PhotonRealtime.ClientState.Joined) {
+          console.warn("[JS] Tried to tap before joining room.");
           return;
         }
-        // Event content is just the integer player index.
+        // Event code 1 means “button press.” Content is simply the integer player index.
         client.raiseEvent(
           /* eventCode = */ 1,
           /* content   = */ playerParam,
-          /* options   = */ new Photon.Realtime.RaiseEventOptions({
-          Receivers: Photon.Realtime.ReceiverGroup.All
+          /* options   = */ new PhotonRealtime.RaiseEventOptions({
+          Receivers: PhotonRealtime.ReceiverGroup.All
         }),
-          /* sendOpts  = */ new Photon.Realtime.SendOptions({ Reliability: true })
+          /* sendOpts  = */ new PhotonRealtime.SendOptions({ Reliability: true })
         );
-        // (We choose Reliable = true, so no taps get lost.)
       }
     })();
   </script>
