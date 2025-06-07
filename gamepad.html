@@ -219,7 +219,7 @@
       client.onError = function (errorCode, errorMsg) {
         console.error("Photon Error:", errorCode, errorMsg);
         logDebug("Photon Error:", errorCode, errorMsg);
-        if (client.getState() === Photon.LoadBalancing.LoadBalancingClient.State.Disconnected) {
+        if (client.state === Photon.LoadBalancing.LoadBalancingClient.State.Disconnected) {
           return;
         }
         statusText.textContent = `⚠️ Photon Error: ${errorMsg}`;
@@ -236,8 +236,8 @@
       //────────────────────────────────────────────────────────────────────────
       function sendTap(evt) {
         evt.preventDefault();
-        // Only send if we’re truly “JoinedToRoom”
-        if (client.getState() !== Photon.LoadBalancing.LoadBalancingClient.State.JoinedToRoom) {
+        // Use client.state (not client.getState()) here:
+        if (client.state !== Photon.LoadBalancing.LoadBalancingClient.State.JoinedToRoom) {
           console.warn("Tap attempted before JoinedToRoom.");
           return;
         }
