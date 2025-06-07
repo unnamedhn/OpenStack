@@ -93,7 +93,7 @@
   <script>
     (function () {
       //────────────────────────────────────────────────────────────────────────
-      // 1) A tiny logger that writes to console and (optionally) #logArea
+      // 1) Tiny logger for console + optional #logArea
       //────────────────────────────────────────────────────────────────────────
       function logDebug(msg, ...args) {
         console.log(msg, ...args);
@@ -107,9 +107,9 @@
       }
 
       //────────────────────────────────────────────────────────────────────────
-      // 2) Read & validate URL parameters:  appId, room, player
-      //    Expected format: 
-      //      ?appId=<<"GUID">>&room=<<RoomName>>&player=<0|1|2>>
+      // 2) Read & validate URL params: appId, room, player
+      //    Example: 
+      //      https://…/gamepad.html?appId=YOUR_APP_ID&room=OpenStackRoom&player=0
       //────────────────────────────────────────────────────────────────────────
       const params = new URLSearchParams(window.location.search);
       const appIdParam = params.get("appId");
@@ -120,32 +120,36 @@
 
       if (!appIdParam || !roomParam || playerStr === null) {
         statusText.textContent =
-          "❗ Invalid parameters.\nUsage: ?appId=…&room=…&player=0/1/2";
+          "❗ Invalid parameters.\nUse: ?appId=…&room=…&player=0/1/2";
         console.error("Missing or invalid URL params. Must include appId, room, and player.");
         return;
       }
 
       const playerIndex = parseInt(playerStr, 10);
       if (isNaN(playerIndex) || playerIndex < 0) {
-        statusText.textContent = "❗ Invalid player index. (Must be 0, 1, 2, ...)";
+        statusText.textContent = "❗ Invalid player index. Use 0, 1, 2, …";
         console.error("player query‐param is not a non‐negative integer:", playerStr);
         return;
       }
 
       //────────────────────────────────────────────────────────────────────────
-      // 3) Create a new LoadBalancingClient using WSS (secure WebSocket)
-      //    - Photon.ConnectionProtocol.Wss is required for HTTPS pages
+      // 3) Create LoadBalancingClient with WSS (secure WebSocket)
+      //    and disable automatic lobby join:
+      //        client.autoJoinLobby = false
       //────────────────────────────────────────────────────────────────────────
       const client = new Photon.LoadBalancing.LoadBalancingClient(
-        Photon.ConnectionProtocol.Wss,  // ← MUST be Wss on HTTPS
+        Photon.ConnectionProtocol.Wss,  // ← must be Wss on HTTPS
         appIdParam,                    // Photon Cloud AppId
-        "1.0"                          // AppVersion (should match Unity side)
+        "1.0"                          // AppVersion (match Unity side)
       );
       client.logger = new Photon.Logger("GamepadJS");
       client.logger.setLevel(Photon.LogLevel.INFO);
 
+      // Disable auto‐join to the default lobby. We'll call joinOrCreateRoom ourselves.
+      client.autoJoinLobby = false;
+
       //────────────────────────────────────────────────────────────────────────
-      // 4) onStateChange callback: show a human‐readable status in #statusText
+      // 4) onStateChange: display human‐readable status in #statusText
       //────────────────────────────────────────────────────────────────────────
       client.onStateChange = function (state) {
         const stateName = Photon.LoadBalancing.LoadBalancingClient.StateToName(state);
@@ -185,32 +189,32 @@
       };
 
       //────────────────────────────────────────────────────────────────────────
-      // 5) onConnectedToMaster: we now immediately call opJoinOrCreateRoom
-      //    using the low‐level operation rather than joinOrCreateRoom().
-      //    This avoids auto‐joining a lobby first.
+      // 5) onConnectedToMaster: call the high‐level joinOrCreateRoom immediately
       //────────────────────────────────────────────────────────────────────────
       client.onConnectedToMaster = function () {
-        logDebug("onConnectedToMaster → calling opJoinOrCreateRoom:", roomParam);
+        logDebug("onConnectedToMaster → calling joinOrCreateRoom:", roomParam);
 
-        // Construct the parameters exactly as in Unity’s EnterRoomParams:
-        const params = {
-          RoomName: roomParam,
-          RoomOptions: new Photon.LoadBalancing.RoomOptions({ MaxPlayers: 10 })
-        };
+        // Create a RoomOptions object with MaxPlayers = 10
+        const roomOptions = new Photon.LoadBalancing.RoomOptions({
+          MaxPlayers: 10
+        });
 
-        client.opJoinOrCreateRoom(params);
+        client.joinOrCreateRoom(
+          roomParam,    // room name
+          roomOptions,  // RoomOptions
+          null          // TypedLobby = null (we disabled autoJoinLobby)
+        );
       };
 
       //────────────────────────────────────────────────────────────────────────
-      // 6) onJoinedRoom: no extra action needed—statusText already updates.
+      // 6) onJoinedRoom: status updated by onStateChange; no extra action
       //────────────────────────────────────────────────────────────────────────
       client.onJoinedRoom = function () {
-        logDebug("onJoinedRoom → successfully joined", roomParam);
-        // Now the stateName is "JoinedToRoom", so taps will be sent.
+        logDebug("onJoinedRoom → joined", roomParam);
       };
 
       //────────────────────────────────────────────────────────────────────────
-      // 7) onJoinRoomFailed: display any error in #statusText
+      // 7) onJoinRoomFailed: display error in #statusText
       //────────────────────────────────────────────────────────────────────────
       client.onJoinRoomFailed = function (returnCode, errorMsg) {
         console.error("onJoinRoomFailed(", returnCode, "):", errorMsg);
@@ -224,7 +228,6 @@
       client.onError = function (errorCode, errorMsg) {
         console.error("Photon Error:", errorCode, errorMsg);
         logDebug("Photon Error:", errorCode, errorMsg);
-
         if (client.state === Photon.LoadBalancing.LoadBalancingClient.State.Disconnected) {
           return;
         }
@@ -232,19 +235,18 @@
       };
 
       //────────────────────────────────────────────────────────────────────────
-      // 9) Connect to the EU region Master server over WSS
+      // 9) Connect to EU region Master over WSS
       //────────────────────────────────────────────────────────────────────────
       logDebug("Calling connectToRegionMaster('eu') …");
       client.connectToRegionMaster("eu");
 
       //────────────────────────────────────────────────────────────────────────
-      // 10) On each tap/click, send RaiseEvent(1, playerIndex)
-      //     (Only if we are truly “JoinedToRoom”)
+      // 10) On tap/click: send RaiseEvent(eventCode=1, content=playerIndex)
+      //     (Only if client.state === JoinedToRoom)
       //────────────────────────────────────────────────────────────────────────
       function sendTap(evt) {
         evt.preventDefault();
 
-        // Check numeric state instead of getState():
         if (client.state !== Photon.LoadBalancing.LoadBalancingClient.State.JoinedToRoom) {
           console.warn("Tap attempted before JoinedToRoom.");
           return;
@@ -261,7 +263,7 @@
         logDebug("Sent tap (event=1) for player", playerIndex);
       }
 
-      // Hook both touchstart and mousedown so desktop + mobile both work
+      // Hook both touchstart and mousedown for mobile & desktop
       touchDiv.addEventListener("touchstart", sendTap, { passive: false });
       touchDiv.addEventListener("mousedown", sendTap);
 
