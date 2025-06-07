@@ -3,140 +3,260 @@
 
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Stack Gamepad</title>
   <style>
+    /* Reset margins/padding and force full‐screen black background */
     html,
     body {
       margin: 0;
       padding: 0;
+      width: 100%;
       height: 100%;
-      overflow: hidden;
       background-color: #111;
+      color: #eee;
+      font-family: Arial, sans-serif;
+      overflow: hidden;
+      touch-action: manipulation;
+      /* Allow taps without scroll interference */
     }
 
+    /* Container for status text and tappable area */
+    #container {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Big “status” text at top of screen */
+    #statusText {
+      position: absolute;
+      top: 5%;
+      width: 100%;
+      text-align: center;
+      font-size: 4vw;
+      line-height: 1.2;
+      pointer-events: none;
+      /* Allow taps through this element */
+      user-select: none;
+    }
+
+    /* Full‐screen tappable area */
     #touchButton {
       position: absolute;
       top: 0;
       left: 0;
       width: 100%;
       height: 100%;
+      background-color: #222;
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 8vw;
       color: #fff;
       user-select: none;
-      -webkit-user-select: none;
-      touch-action: manipulation;
-      background-color: #222;
-      text-align: center;
-      white-space: pre-wrap;
+    }
+
+    /* Optional: smaller console/log area at bottom for debugging */
+    #logArea {
+      position: absolute;
+      bottom: 0;
+      width: 100%;
+      max-height: 25%;
+      overflow-y: auto;
+      background-color: rgba(0, 0, 0, 0.7);
+      font-size: 2.5vw;
+      line-height: 1.1;
+      padding: 0.5em;
+      box-sizing: border-box;
+      display: none;
+      /* Set to block for debug */
+    }
+
+    #logArea div {
+      margin-bottom: 0.2em;
     }
   </style>
 </head>
 
 <body>
-  <div id="touchButton">TAP TO STACK</div>
+  <div id="container">
+    <div id="statusText">Connecting…</div>
+    <div id="touchButton">TAP TO STACK</div>
+    <!-- Optional: scrollable log area (uncomment display:block in CSS to see) -->
+    <div id="logArea"></div>
+  </div>
 
-  <!-- Photon Realtime JavaScript SDK v4.3.2 (make sure this file exists) -->
+  <!-- Photon Realtime JS SDK v4.3.2 -->
   <script src="lib/photon.js"></script>
   <script>
     (function () {
-      // ────────────────────────────────────────────────────────────────────────
-      // A) PARSE URL PARAMETERS:  ?appId=…&room=…&player=0/1/2
-      // ────────────────────────────────────────────────────────────────────────
+      //────────────────────────────────────────────────────────────────────────
+      // 1) UTILITY: Log both to console and (optionally) to #logArea
+      //────────────────────────────────────────────────────────────────────────
+      function logDebug(msg, ...args) {
+        console.log(msg, ...args);
+        const logArea = document.getElementById("logArea");
+        if (logArea.style.display === "block") {
+          const line = document.createElement("div");
+          line.textContent = "[JS] " + msg + (args.length ? " " + args.join(" ") : "");
+          logArea.appendChild(line);
+          logArea.scrollTop = logArea.scrollHeight;
+        }
+      }
+
+      //────────────────────────────────────────────────────────────────────────
+      // 2) READ & VALIDATE URL PARAMETERS: appId, room, player
+      //    Example: ?appId=24486317-8389-4cd2-9ea6-26620e50d33b
+      //             &room=OpenStackRoom
+      //             &player=0
+      //────────────────────────────────────────────────────────────────────────
       const params = new URLSearchParams(window.location.search);
       const appIdParam = params.get("appId");
       const roomParam = params.get("room");
-      const playerParam = parseInt(params.get("player"), 10);
+      const playerStr = params.get("player");
+      const statusText = document.getElementById("statusText");
+      const touchDiv = document.getElementById("touchButton");
 
-      if (!appIdParam || !roomParam || isNaN(playerParam)) {
-        document.getElementById("touchButton").innerText =
-          "Invalid URL parameters.\nExpected: ?appId=…&room=…&player=0/1/2";
-        console.error("Missing or invalid URL parameters.");
+      if (!appIdParam || !roomParam || playerStr === null) {
+        statusText.textContent =
+          "❗ Invalid URL parameters.\nExpected: ?appId=…&room=…&player=0/1/2";
+        console.error("Missing or invalid URL parameters. URL must include appId, room, and player.");
+        return;
+      }
+      const playerIndex = parseInt(playerStr, 10);
+      if (isNaN(playerIndex) || playerIndex < 0) {
+        statusText.textContent = "❗ Invalid player index. Must be integer ≥ 0.";
+        console.error("player query‐param is not a non‐negative integer:", playerStr);
         return;
       }
 
-      // ────────────────────────────────────────────────────────────────────────
-      // B) CREATE & CONFIGURE LoadBalancingClient (v4.3.2)
-      //    - Use ConnectionProtocol.Wss so the browser opens a secure WebSocket
-      //    - Then explicitly connectToRegionMaster("eu")
-      // ────────────────────────────────────────────────────────────────────────
+      //────────────────────────────────────────────────────────────────────────
+      // 3) CREATE & CONFIGURE Photon LoadBalancingClient
+      //    - Use ConnectionProtocol.Wss to force secure WebSocket
+      //────────────────────────────────────────────────────────────────────────
       const client = new Photon.LoadBalancing.LoadBalancingClient(
-        Photon.ConnectionProtocol.Wss, // ← Must be Wss in an HTTPS‐served page
-        appIdParam,
-        "1.0"                          // AppVersion (match your Unity host)
+        Photon.ConnectionProtocol.Wss,   // ‒ Must be Wss for HTTPS pages
+        appIdParam,                     // ‒ Photon Cloud AppId
+        "1.0"                           // ‒ AppVersion (match Unity’s)
       );
-      client.logger = new Photon.Logger("JS");
+      client.logger = new Photon.Logger("GamepadJS");
       client.logger.setLevel(Photon.LogLevel.INFO);
 
-      // 1) onConnectedToMaster  →  join or create the room
+      //────────────────────────────────────────────────────────────────────────
+      // 4) CALLBACK: onStateChange to update status UI
+      //────────────────────────────────────────────────────────────────────────
+      client.onStateChange = function (state) {
+        // LoadBalancingClientState is not directly exposed, but
+        // client.isConnectedToNameServer() / isConnectedToMaster() / isJoinedToRoom() can be used.
+        let txt = "";
+        if (client.isConnectingToNameServer()) {
+          txt = "Connecting to Photon NameServer…";
+        } else if (client.isConnectedToNameServer()) {
+          txt = "Connected to NameServer. Authenticating…";
+        } else if (client.isConnectingToMaster()) {
+          txt = "Connecting to Master…";
+        } else if (client.isConnectedToMaster()) {
+          txt = "Connected to Master. Joining Room…";
+        } else if (client.isJoining()) {
+          txt = "Joining or Creating Room \"" + roomParam + "\"…";
+        } else if (client.isJoinedToRoom()) {
+          txt = "✅ Joined Room \"" + roomParam + "\"\nPLAYER " + playerIndex;
+        } else if (client.isDisconnecting()) {
+          txt = "Disconnecting…";
+        } else if (client.isDisconnected()) {
+          txt = "❌ Disconnected.";
+        } else {
+          txt = "State: " + state;
+        }
+        statusText.textContent = txt;
+        logDebug("State changed:", state, "| Text:", txt.replace(/\n/g, " | "));
+      };
+
+      //────────────────────────────────────────────────────────────────────────
+      // 5) CALLBACK: onConnectedToMaster → join or create the room
+      //────────────────────────────────────────────────────────────────────────
       client.onConnectedToMaster = function () {
-        console.log("[JS] onConnectedToMaster → joining room:", roomParam);
+        logDebug("onConnectedToMaster → calling joinOrCreateRoom:", roomParam);
+        // Same RoomOptions as Unity (MaxPlayers unused on JS side).
         client.joinOrCreateRoom(
-          roomParam,  // room name (must match Unity’s “OpenStackRoom”)
-          {},         // no custom RoomOptions
-          {}          // no LobbyOptions
+          roomParam,
+          {}, // default RoomOptions
+          {}  // default LobbyOptions
         );
       };
 
-      // 2) onJoinedRoom → update the UI so user knows they’re in
+      //────────────────────────────────────────────────────────────────────────
+      // 6) CALLBACK: onJoinedRoom → now we can tap
+      //────────────────────────────────────────────────────────────────────────
       client.onJoinedRoom = function () {
-        console.log("[JS] onJoinedRoom → IN ROOM:", roomParam, "PLAYER:", playerParam);
-        document.getElementById("touchButton").innerText =
-          "IN STACK ROOM\nPLAYER " + playerParam;
+        logDebug("onJoinedRoom() → joined:", roomParam);
+        // We already update statusText inside onStateChange, so no need to set it again.
       };
 
-      // 3) onJoinRoomFailed → show error on the button itself
+      //────────────────────────────────────────────────────────────────────────
+      // 7) CALLBACK: onJoinRoomFailed → display error
+      //────────────────────────────────────────────────────────────────────────
       client.onJoinRoomFailed = function (returnCode, errorMsg) {
-        console.error("[JS] onJoinRoomFailed(", returnCode, "):", errorMsg);
-        document.getElementById("touchButton").innerText =
-          "Failed to join room.\nSee console.";
+        console.error("onJoinRoomFailed(", returnCode, "):", errorMsg);
+        statusText.textContent =
+          "❌ Failed to join \"" + roomParam + "\"\nError: " + errorMsg;
       };
 
-      // Generic error callback
+      //────────────────────────────────────────────────────────────────────────
+      // 8) CALLBACK: onError → generic error handler
+      //────────────────────────────────────────────────────────────────────────
       client.onError = function (errorCode, errorMsg) {
-        console.error("[JS] Photon Error:", errorCode, errorMsg);
+        console.error("Photon Error:", errorCode, errorMsg);
+        logDebug("Photon Error:", errorCode, errorMsg);
+        // If we’re already disconnected, do nothing else
+        if (client.isDisconnected()) return;
+        // Otherwise show a brief error overlay
+        statusText.textContent = "⚠️ Photon Error: " + errorMsg;
       };
 
-      // We don’t need to process inbound events in this simple tap‐only flow:
-      client.onEvent = function (code, content, actorNr) {
-        // No‐op. (Unity is logging Raises on its side.)
-      };
-
-      // ────────────────────────────────────────────────────────────────────────
-      // C) CONNECT TO REGION MASTER (EU)
-      // ────────────────────────────────────────────────────────────────────────
+      //────────────────────────────────────────────────────────────────────────
+      // 9) CONNECT TO PHOTON EU REGION MASTER (secure WebSocket)
+      //────────────────────────────────────────────────────────────────────────
+      logDebug("Calling connectToRegionMaster('eu') …");
       client.connectToRegionMaster("eu");
-      // → This ensures “wss://<region>.p3photon.com:9093/…” under the hood instead of ws://.
 
-      // ────────────────────────────────────────────────────────────────────────
-      // D) ON TAP: raiseEvent(eventCode=1, content=playerParam)
-      //    (Matches Unity’s `buttonEventCode = 1`)
-      // ────────────────────────────────────────────────────────────────────────
+      //────────────────────────────────────────────────────────────────────────
+      // 10) HANDLE TAP / CLICK: send RaiseEvent(code=1, content=playerIndex)
+      //────────────────────────────────────────────────────────────────────────
       function sendTap(evt) {
         evt.preventDefault();
-        if (client.getState() !== Photon.LoadBalancing.LoadBalancingClientState.Joined) {
-          console.warn("[JS] Tried tapping before actually joining the room.");
+        if (!client.isJoinedToRoom()) {
+          console.warn("Tried to tap before joining the room.");
           return;
         }
-
+        // RaiseEvent(eventCode, content, RaiseEventOptions, SendOptions)
         client.raiseEvent(
           /* eventCode = */ 1,
-          /* content   = */ playerParam,
+          /* content   = */ playerIndex,
           /* options   = */ new Photon.LoadBalancing.RaiseEventOptions({
           Receivers: Photon.LoadBalancing.ReceiverGroup.All
         }),
           /* sendOpts  = */ new Photon.SendOptions({ Reliability: true })
         );
-        console.log("[JS] Sent tap for player", playerParam);
+        logDebug("Sent tap (event=1) for player", playerIndex);
+        // (We do not change the statusText on every tap, since Unity logs it.)
       }
 
-      // Attach both touchstart and mousedown for desktop/mobile
-      const buttonDiv = document.getElementById("touchButton");
-      buttonDiv.addEventListener("touchstart", sendTap, { passive: false });
-      buttonDiv.addEventListener("mousedown", sendTap);
+      // Attach both touchstart and mousedown to cover mobile & desktop
+      touchDiv.addEventListener("touchstart", sendTap, { passive: false });
+      touchDiv.addEventListener("mousedown", sendTap);
+
+      //────────────────────────────────────────────────────────────────────────
+      // 11) OPTIONAL: Prevent context menu/popups on long‐press
+      //────────────────────────────────────────────────────────────────────────
+      window.addEventListener("contextmenu", function (e) {
+        e.preventDefault();
+      });
     })();
   </script>
 </body>
