@@ -188,7 +188,7 @@
           this.setState('Connecting');
 
           // Use Photon Cloud WebSocket endpoint
-          const wsUrl = `wss://ns.exitgames.com:19093`;
+          const wsUrl = `wss://ns.exitgames.com:19093/?appid=${this.appId}&version=${this.gameVersion}`;
 
           try {
             this.websocket = new WebSocket(wsUrl);
