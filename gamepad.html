@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Stack Gamepad</title>
   <style>
-    /* Reset margins/padding and force full‐screen black background */
+    /* Full‐screen black background */
     html,
     body {
       margin: 0;
@@ -18,10 +18,9 @@
       font-family: Arial, sans-serif;
       overflow: hidden;
       touch-action: manipulation;
-      /* Allow taps without scroll interference */
     }
 
-    /* Container for status text and tappable area */
+    /* Container flex‐centers everything */
     #container {
       position: relative;
       width: 100%;
@@ -32,7 +31,7 @@
       justify-content: center;
     }
 
-    /* Big “status” text at top of screen */
+    /* Status text at top */
     #statusText {
       position: absolute;
       top: 5%;
@@ -41,11 +40,10 @@
       font-size: 4vw;
       line-height: 1.2;
       pointer-events: none;
-      /* Allow taps through this element */
       user-select: none;
     }
 
-    /* Full‐screen tappable area */
+    /* Full‐screen tappable button area */
     #touchButton {
       position: absolute;
       top: 0;
@@ -61,7 +59,7 @@
       user-select: none;
     }
 
-    /* Optional: smaller console/log area at bottom for debugging */
+    /* (Optional) Debug log area at bottom */
     #logArea {
       position: absolute;
       bottom: 0;
@@ -74,7 +72,7 @@
       padding: 0.5em;
       box-sizing: border-box;
       display: none;
-      /* Set to block for debug */
+      /* Change to “block” for debugging */
     }
 
     #logArea div {
@@ -87,7 +85,6 @@
   <div id="container">
     <div id="statusText">Connecting…</div>
     <div id="touchButton">TAP TO STACK</div>
-    <!-- Optional: scrollable log area (uncomment display:block in CSS to see) -->
     <div id="logArea"></div>
   </div>
 
@@ -96,7 +93,7 @@
   <script>
     (function () {
       //────────────────────────────────────────────────────────────────────────
-      // 1) UTILITY: Log both to console and (optionally) to #logArea
+      // 1) Utility: log to console + optional #logArea
       //────────────────────────────────────────────────────────────────────────
       function logDebug(msg, ...args) {
         console.log(msg, ...args);
@@ -110,7 +107,7 @@
       }
 
       //────────────────────────────────────────────────────────────────────────
-      // 2) READ & VALIDATE URL PARAMETERS: appId, room, player
+      // 2) Read & validate URL parameters: appId, room, player
       //    Example: ?appId=24486317-8389-4cd2-9ea6-26620e50d33b
       //             &room=OpenStackRoom
       //             &player=0
@@ -136,105 +133,114 @@
       }
 
       //────────────────────────────────────────────────────────────────────────
-      // 3) CREATE & CONFIGURE Photon LoadBalancingClient
-      //    - Use ConnectionProtocol.Wss to force secure WebSocket
+      // 3) Instantiate Photon LoadBalancingClient using secure WSS
       //────────────────────────────────────────────────────────────────────────
       const client = new Photon.LoadBalancing.LoadBalancingClient(
-        Photon.ConnectionProtocol.Wss,   // ‒ Must be Wss for HTTPS pages
-        appIdParam,                     // ‒ Photon Cloud AppId
-        "1.0"                           // ‒ AppVersion (match Unity’s)
+        Photon.ConnectionProtocol.Wss,   // ← MUST be Wss when served over HTTPS
+        appIdParam,                     // Photon Cloud AppId
+        "1.0"                           // AppVersion (match Unity)
       );
       client.logger = new Photon.Logger("GamepadJS");
       client.logger.setLevel(Photon.LogLevel.INFO);
 
       //────────────────────────────────────────────────────────────────────────
-      // 4) CALLBACK: onStateChange to update status UI
+      // 4) onStateChange: map numeric state → string, then update #statusText
       //────────────────────────────────────────────────────────────────────────
       client.onStateChange = function (state) {
-        // LoadBalancingClientState is not directly exposed, but
-        // client.isConnectedToNameServer() / isConnectedToMaster() / isJoinedToRoom() can be used.
-        let txt = "";
-        if (client.isConnectingToNameServer()) {
-          txt = "Connecting to Photon NameServer…";
-        } else if (client.isConnectedToNameServer()) {
-          txt = "Connected to NameServer. Authenticating…";
-        } else if (client.isConnectingToMaster()) {
-          txt = "Connecting to Master…";
-        } else if (client.isConnectedToMaster()) {
-          txt = "Connected to Master. Joining Room…";
-        } else if (client.isJoining()) {
-          txt = "Joining or Creating Room \"" + roomParam + "\"…";
-        } else if (client.isJoinedToRoom()) {
-          txt = "✅ Joined Room \"" + roomParam + "\"\nPLAYER " + playerIndex;
-        } else if (client.isDisconnecting()) {
-          txt = "Disconnecting…";
-        } else if (client.isDisconnected()) {
-          txt = "❌ Disconnected.";
-        } else {
-          txt = "State: " + state;
+        const stateName = Photon.LoadBalancing.LoadBalancingClient.StateToName(state);
+        let displayText;
+
+        switch (stateName) {
+          case "ConnectingToNameServer":
+            displayText = "Connecting to NameServer…";
+            break;
+          case "ConnectedToNameServer":
+            displayText = "Connected to NameServer…";
+            break;
+          case "ConnectingToMasterserver":
+            displayText = "Connecting to Master…";
+            break;
+          case "ConnectedToMaster":
+            displayText = "Connected to Master. Joining Room…";
+            break;
+          case "Joining":  // internal “Joining” state before OnJoinedRoom callback
+            displayText = `Joining Room "${roomParam}"…`;
+            break;
+          case "JoinedToRoom":
+            displayText = `✅ Joined Room "${roomParam}"\nPLAYER ${playerIndex}`;
+            break;
+          case "Disconnecting":
+            displayText = "Disconnecting…";
+            break;
+          case "Disconnected":
+            displayText = "❌ Disconnected";
+            break;
+          default:
+            displayText = stateName;
+            break;
         }
-        statusText.textContent = txt;
-        logDebug("State changed:", state, "| Text:", txt.replace(/\n/g, " | "));
+
+        statusText.textContent = displayText;
+        logDebug("onStateChange →", stateName, "| Display:", displayText.replace("\n", " | "));
       };
 
       //────────────────────────────────────────────────────────────────────────
-      // 5) CALLBACK: onConnectedToMaster → join or create the room
+      // 5) onConnectedToMaster: join or create the room
       //────────────────────────────────────────────────────────────────────────
       client.onConnectedToMaster = function () {
         logDebug("onConnectedToMaster → calling joinOrCreateRoom:", roomParam);
-        // Same RoomOptions as Unity (MaxPlayers unused on JS side).
         client.joinOrCreateRoom(
-          roomParam,
-          {}, // default RoomOptions
-          {}  // default LobbyOptions
+          roomParam,  // room name
+          {},         // default RoomOptions
+          {}          // default LobbyOptions
         );
       };
 
       //────────────────────────────────────────────────────────────────────────
-      // 6) CALLBACK: onJoinedRoom → now we can tap
+      // 6) onJoinedRoom: stateName “JoinedToRoom” already handled above
       //────────────────────────────────────────────────────────────────────────
       client.onJoinedRoom = function () {
-        logDebug("onJoinedRoom() → joined:", roomParam);
-        // We already update statusText inside onStateChange, so no need to set it again.
+        logDebug("onJoinedRoom → successfully joined", roomParam);
+        // UI is updated in onStateChange when stateName === "JoinedToRoom"
       };
 
       //────────────────────────────────────────────────────────────────────────
-      // 7) CALLBACK: onJoinRoomFailed → display error
+      // 7) onJoinRoomFailed: show error if joining fails
       //────────────────────────────────────────────────────────────────────────
       client.onJoinRoomFailed = function (returnCode, errorMsg) {
         console.error("onJoinRoomFailed(", returnCode, "):", errorMsg);
         statusText.textContent =
-          "❌ Failed to join \"" + roomParam + "\"\nError: " + errorMsg;
+          `❌ Failed to join "${roomParam}"\nError: ${errorMsg}`;
       };
 
       //────────────────────────────────────────────────────────────────────────
-      // 8) CALLBACK: onError → generic error handler
+      // 8) onError: generic error callback
       //────────────────────────────────────────────────────────────────────────
       client.onError = function (errorCode, errorMsg) {
         console.error("Photon Error:", errorCode, errorMsg);
         logDebug("Photon Error:", errorCode, errorMsg);
-        // If we’re already disconnected, do nothing else
-        if (client.isDisconnected()) return;
-        // Otherwise show a brief error overlay
-        statusText.textContent = "⚠️ Photon Error: " + errorMsg;
+        if (client.getState() === Photon.LoadBalancing.LoadBalancingClient.State.Disconnected) {
+          return;
+        }
+        statusText.textContent = `⚠️ Photon Error: ${errorMsg}`;
       };
 
       //────────────────────────────────────────────────────────────────────────
-      // 9) CONNECT TO PHOTON EU REGION MASTER (secure WebSocket)
+      // 9) Connect to EU region Master over WSS
       //────────────────────────────────────────────────────────────────────────
       logDebug("Calling connectToRegionMaster('eu') …");
       client.connectToRegionMaster("eu");
 
       //────────────────────────────────────────────────────────────────────────
-      // 10) HANDLE TAP / CLICK: send RaiseEvent(code=1, content=playerIndex)
+      // 10) On tap/click, send RaiseEvent(eventCode=1, content=playerIndex)
       //────────────────────────────────────────────────────────────────────────
       function sendTap(evt) {
         evt.preventDefault();
-        if (!client.isJoinedToRoom()) {
-          console.warn("Tried to tap before joining the room.");
+        // Only send if we’re truly “JoinedToRoom”
+        if (client.getState() !== Photon.LoadBalancing.LoadBalancingClient.State.JoinedToRoom) {
+          console.warn("Tap attempted before JoinedToRoom.");
           return;
         }
-        // RaiseEvent(eventCode, content, RaiseEventOptions, SendOptions)
         client.raiseEvent(
           /* eventCode = */ 1,
           /* content   = */ playerIndex,
@@ -244,15 +250,14 @@
           /* sendOpts  = */ new Photon.SendOptions({ Reliability: true })
         );
         logDebug("Sent tap (event=1) for player", playerIndex);
-        // (We do not change the statusText on every tap, since Unity logs it.)
       }
 
-      // Attach both touchstart and mousedown to cover mobile & desktop
+      // Attach both touchstart and mousedown for mobile & desktop
       touchDiv.addEventListener("touchstart", sendTap, { passive: false });
       touchDiv.addEventListener("mousedown", sendTap);
 
       //────────────────────────────────────────────────────────────────────────
-      // 11) OPTIONAL: Prevent context menu/popups on long‐press
+      // 11) Prevent context menu on long‐press
       //────────────────────────────────────────────────────────────────────────
       window.addEventListener("contextmenu", function (e) {
         e.preventDefault();
