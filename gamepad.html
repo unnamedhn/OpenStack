@@ -38,16 +38,16 @@
   <div id="touchButton">TAP TO STACK</div>
 
   <!--
-    1) Load Photon JavaScript SDK v5.1.5 UMD build.
-       This exposes `window.Photon` (not PhotonRealtime).
+    1) Load Photon Realtime v4.3.2 UMD build from jsDelivr.
+       This defines `window.PhotonRealtime`.
   -->
-  <script src="https://cdn.jsdelivr.net/npm/photon-javascript-sdk@5.1.5/dist/photon-javascript-sdk.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/photon-realtime@4.3.2/build/photon-realtime.js"></script>
   <script>
     (function () {
-      // 2) Verify that Photon loaded successfully:
-      if (!window.Photon || !Photon.LoadBalancing) {
-        console.error("Photon SDK failed to load.");
-        alert("Error: Could not load Photon SDK. Check your network or script URL.");
+      // 2) Verify that PhotonRealtime loaded successfully:
+      if (!window.PhotonRealtime || !PhotonRealtime.LoadBalancingClient) {
+        console.error("PhotonRealtime SDK failed to load.");
+        alert("Error: Could not load PhotonRealtime SDK. Check script URL.");
         return;
       }
 
@@ -59,32 +59,33 @@
 
       if (!appIdParam || !roomParam || isNaN(playerParam)) {
         document.getElementById("touchButton").innerText =
-          "Invalid URL parameters.\nUsage: ?appId=…&room=…&player=0/1/2";
+          "Invalid URL parameters.\nExpected: ?appId=…&room=…&player=0/1/2";
         console.error("Missing or invalid URL parameters.");
         return;
       }
 
-      // 4) Create a LoadBalancingClient using UDP protocol
-      //    Arguments: (protocol, appId, appVersion)
-      const region = "eu"; // Must match the FixedRegion used in Unity (e.g. "eu", "us", etc.)
-      const client = new Photon.LoadBalancing.LoadBalancingClient(
-        Photon.ConnectionProtocol.Udp,
+      // 4) Create a PhotonRealtime LoadBalancingClient (UDP, appId, version)
+      const region = "eu"; // Must match the `FixedRegion` used in Unity (e.g. "eu", "us", etc.)
+      const client = new PhotonRealtime.LoadBalancingClient(
+        PhotonRealtime.ConnectionProtocol.Udp,
         appIdParam,
         "1.0"
       );
+      client.setLogLevel(PhotonRealtime.DebugLevel.WARNING);
 
-      // 5) Set up state-change handler to join the room once connected
+      // 5) Handle state changes: join/create room when in lobby, update UI when joined
       client.onStateChange = function (state) {
         switch (state) {
-          case Photon.LoadBalancing.LoadBalancingClient.State.ConnectedToMaster:
-          case Photon.LoadBalancing.LoadBalancingClient.State.JoinedLobby:
-            // Once we are in the lobby, join or create the specified room
-            console.log("[JS] Joined Lobby → joining/creating room:", roomParam);
-            client.joinOrCreateRoom(roomParam, {}, { maxPlayers: 3 });
+          case PhotonRealtime.LoadBalancingClient.State.JoinedLobby:
+            console.log("[JS] JoinedLobby → joinOrCreateRoom:", roomParam);
+            client.joinOrCreateRoom(
+              roomParam,
+              { maxPlayers: 3 },  // RoomOptions
+              null                // TypedLobby (null = default)
+            );
             break;
 
-          case Photon.LoadBalancing.LoadBalancingClient.State.Joined:
-            // We have joined (or created) the room successfully
+          case PhotonRealtime.LoadBalancingClient.State.Joined:
             console.log("[JS] Joined room:", roomParam);
             document.getElementById("touchButton").innerText =
               "IN STACK ROOM\nPLAYER " + playerParam;
@@ -92,7 +93,7 @@
         }
       };
 
-      // 6) Handle errors for easier debugging
+      // 6) Error handlers for easier debugging
       client.onError = function (errorCode, errorMsg) {
         console.error("[JS] Photon Error:", errorCode, errorMsg);
       };
@@ -102,28 +103,28 @@
           "Failed to join room.\nSee console.";
       };
 
-      // 7) Start connecting to Photon Cloud in the chosen region
+      // 7) Connect to Photon Cloud’s Master server in the chosen region
       console.log("[JS] Connecting to Photon region:", region);
       client.connectToRegionMaster(region);
 
-      // 8) Listen for taps (mobile “touchstart” or desktop “mousedown”) to send EventCode=1
+      // 8) On “touchstart” (mobile) or “mousedown” (desktop), raise EventCode=1 with content=playerParam
       const buttonDiv = document.getElementById("touchButton");
       buttonDiv.addEventListener("touchstart", sendTap, { passive: false });
       buttonDiv.addEventListener("mousedown", sendTap);
 
       function sendTap(evt) {
         evt.preventDefault();
-        // Only send if we are already joined in the room
-        if (client.getState() !== Photon.LoadBalancing.LoadBalancingClient.State.Joined) {
+        // Only send if we’re already Joined
+        if (client.getState() !== PhotonRealtime.LoadBalancingClient.State.Joined) {
           console.warn("[JS] Tap ignored: not yet in room.");
           return;
         }
-        // Raise EventCode=1 with content = playerParam (0,1,2), sent to all peers
+        // EventCode=1 signals “button press.” Payload = playerParam (integer 0/1/2).
         client.raiseEvent(
-          /* eventCode: */ 1,
-          /*   content: */ playerParam,
-          /*   options: */ new Photon.LoadBalancing.RaiseEventOptions({
-          receivers: Photon.LoadBalancing.ReceiverGroup.All
+          /* eventCode */ 1,
+          /*   content */ playerParam,
+          /*   options */ new PhotonRealtime.RaiseEventOptions({
+          receivers: PhotonRealtime.ReceiverGroup.All
         })
         );
       }
