@@ -459,7 +459,7 @@
             break;
           case Photon.LoadBalancing.LoadBalancingClient.State.Joined:
             const actorNumber = client.myActor().actorNr;
-            playerIndex = actorNumber - 1;
+            playerIndex = ((actorNumber - 2) % 3) + 1;
             updatePlayerStyling(playerIndex - 1);
             displayHTML = `
               <span class="status-connected">✅ متصل شد</span><br>
