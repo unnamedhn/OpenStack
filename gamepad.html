@@ -113,36 +113,13 @@
           const timeSinceLastHeartbeat = Date.now() - lastHeartbeat;
 
           if (timeSinceLastHeartbeat > HEARTBEAT_TIMEOUT) {
-            // logDebug("Heartbeat timeout detected - server likely disconnected");
-            // statusText.textContent = "❌ Server disconnected";
 
             // Force disconnect and attempt reconnection
             if (client && !client.isJoinedToRoom()) {
               client.disconnect();
             }
-
-            // Optional: Attempt to reconnect after a delay
-            // setTimeout(() => {
-            //   if (statusText.textContent.includes("Server disconnected")) {
-            //     statusText.textContent = "🔄 Reconnecting...";
-            //     attemptReconnection();
-            //   }
-            // }, 2000);
           }
         }, HEARTBEAT_INTERVAL);
-      }
-
-
-      function attemptReconnection() {
-        logDebug("Attempting to reconnect...");
-        const connectResult = client.connectToNameServer({
-          region: regionParam.toLowerCase()
-        });
-
-        if (!connectResult) {
-          console.error("Failed to reconnect to NameServer");
-          statusText.textContent = "❌ Reconnection failed";
-        }
       }
 
 
@@ -272,13 +249,7 @@
         logDebug("Now in lobby, attempting to join/create room:", roomParam);
 
         // Use joinRoom with createIfNotExists option
-        const joinResult = client.joinRoom(roomParam, {
-          createIfNotExists: false
-        }, {
-          maxPlayers: 10,
-          isVisible: true,
-          isOpen: true
-        });
+        const joinResult = client.joinRoom(roomParam, null, null);
 
         if (!joinResult) {
           console.error("Failed to send join room request");
