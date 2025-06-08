@@ -97,6 +97,55 @@
   <script src="lib/photon.js"></script>
   <script>
     (function () {
+
+
+      let heartbeatInterval;
+      let lastHeartbeat = Date.now();
+      const HEARTBEAT_TIMEOUT = 10000; // 10 seconds
+      const HEARTBEAT_INTERVAL = 3000; // 3 seconds
+
+      function startHeartbeatMonitoring() {
+        if (heartbeatInterval) {
+          clearInterval(heartbeatInterval);
+        }
+
+        heartbeatInterval = setInterval(() => {
+          const timeSinceLastHeartbeat = Date.now() - lastHeartbeat;
+
+          if (timeSinceLastHeartbeat > HEARTBEAT_TIMEOUT) {
+            logDebug("Heartbeat timeout detected - server likely disconnected");
+            statusText.textContent = "❌ Server disconnected";
+
+            // Force disconnect and attempt reconnection
+            if (client && client.isConnected()) {
+              client.disconnect();
+            }
+
+            // Optional: Attempt to reconnect after a delay
+            setTimeout(() => {
+              if (statusText.textContent.includes("Server disconnected")) {
+                statusText.textContent = "🔄 Reconnecting...";
+                attemptReconnection();
+              }
+            }, 2000);
+          }
+        }, HEARTBEAT_INTERVAL);
+      }
+
+
+      function attemptReconnection() {
+        logDebug("Attempting to reconnect...");
+        const connectResult = client.connectToNameServer({
+          region: regionParam.toLowerCase()
+        });
+
+        if (!connectResult) {
+          console.error("Failed to reconnect to NameServer");
+          statusText.textContent = "❌ Reconnection failed";
+        }
+      }
+
+
       //────────────────────────────────────────────────────────────────────────
       // 1) Simple logger: writes to console and (optionally) #logArea
       //────────────────────────────────────────────────────────────────────────
@@ -179,6 +228,8 @@
             break;
           case Photon.LoadBalancing.LoadBalancingClient.State.Joined:
             displayText = `✅ Joined Room "${roomParam}"\nPLAYER ${playerIndex}`;
+            lastHeartbeat = Date.now(); // Reset heartbeat
+            startHeartbeatMonitoring(); // Start monitoring
             break;
           case Photon.LoadBalancing.LoadBalancingClient.State.Disconnected:
             displayText = "❌ Disconnected";
@@ -198,6 +249,21 @@
           attemptJoinRoom();
         }
       };
+
+      const originalOnEvent = client.onEvent;
+      client.onEvent = function (eventCode, data, actorNr) {
+        lastHeartbeat = Date.now(); // Reset heartbeat on any received event
+        if (originalOnEvent) {
+          originalOnEvent.call(this, eventCode, data, actorNr);
+        }
+      };
+
+      // Add cleanup when page unloads:
+      window.addEventListener('beforeunload', function () {
+        if (heartbeatInterval) {
+          clearInterval(heartbeatInterval);
+        }
+      });
 
       //────────────────────────────────────────────────────────────────────────
       // 5) Function to attempt joining room (called when in lobby)
