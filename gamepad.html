@@ -119,6 +119,7 @@
       const appIdParam = params.get("appId");
       const roomParam = params.get("room");
       const playerStr = params.get("player");
+      const regionParam = params.get("region") || "eu";
       const statusText = document.getElementById("statusText");
       const touchDiv = document.getElementById("touchButton");
 
@@ -131,7 +132,7 @@
 
       const playerIndex = parseInt(playerStr, 10);
       if (isNaN(playerIndex) || playerIndex < 0) {
-        statusText.textContent = "❗ Invalid player index (must be 0, 1, 2, …).";
+        statusText.textContent = "❗  Invalid parameters.\nUse: ?appId=…&room=…&player=0/1/2&region=uae";
         console.error("player query‐param is not a non‐negative integer:", playerStr);
         return;
       }
@@ -227,12 +228,12 @@
 
       // Handle successful connection to NameServer
       client.onConnectedToNameServer = function () {
-        logDebug("Connected to NameServer, now connecting to region master 'asia'");
+        logDebug(`Connected to NameServer, now connecting to region master '${regionParam}'`);
         // Connect to EU region master server
-        const result = client.connectToRegionMaster("asia");
+        const result = client.connectToRegionMaster(regionParam.toLowerCase());
         if (!result) {
           console.error("Failed to connect to region master");
-          statusText.textContent = "❌ Failed to connect to region";
+          statusText.textContent = `❌ Failed to connect to region ${regionParam}`;
         }
       };
 
@@ -277,9 +278,9 @@
       //────────────────────────────────────────────────────────────────────────
       // 10) Start connection - connect to NameServer first
       //────────────────────────────────────────────────────────────────────────
-      logDebug("Starting connection to NameServer...");
+      logDebug(`Starting connection to NameServer with region: ${regionParam}...`);
       const connectResult = client.connectToNameServer({
-        region: "eu"
+        region: regionParam.toLowerCase()
       });
 
       if (!connectResult) {
