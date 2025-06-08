@@ -114,9 +114,13 @@
 
           if (timeSinceLastHeartbeat > HEARTBEAT_TIMEOUT) {
 
-            // Force disconnect and attempt reconnection
-            if (client && !client.isJoinedToRoom()) {
-              client.disconnect();
+            if (client.isJoinedToRoom()) {
+              const exists = client.availableRooms().some(r => r.name === roomParam);
+              if (!exists)
+                // Force disconnect and attempt reconnection
+                if (client && !client.isJoinedToRoom())
+                  client.disconnect();
+
             }
           }
         }, HEARTBEAT_INTERVAL);
@@ -248,7 +252,7 @@
       function attemptJoinRoom() {
         logDebug("Now in lobby, attempting to join/create room:", roomParam);
 
-        // Use joinRoom with createIfNotExists option
+        // Use joinRoom 
         const joinResult = client.joinRoom(roomParam, null, null);
 
         if (!joinResult) {
