@@ -117,7 +117,7 @@
             statusText.textContent = "❌ Server disconnected";
 
             // Force disconnect and attempt reconnection
-            if (client && client.isConnected()) {
+            if (client && client.isJoinedToRoom()) {
               client.disconnect();
             }
 
@@ -273,7 +273,7 @@
 
         // Use joinRoom with createIfNotExists option
         const joinResult = client.joinRoom(roomParam, {
-          createIfNotExists: true
+          createIfNotExists: false
         }, {
           maxPlayers: 10,
           isVisible: true,
