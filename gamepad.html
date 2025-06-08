@@ -460,7 +460,7 @@
           case Photon.LoadBalancing.LoadBalancingClient.State.Joined:
             const actorNumber = client.myActor().actorNr;
             playerIndex = actorNumber - 1;
-            updatePlayerStyling(playerIndex);
+            updatePlayerStyling(playerIndex - 1);
             displayHTML = `
               <span class="status-connected">✅ متصل شد</span><br>
               <small>اتاق: ${roomParam}</small>
