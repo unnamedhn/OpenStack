@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Stack Gamepad</title>
+  <title>گیم‌پد استک</title>
   <style>
     /* CSS Variables for easy customization */
     :root {
@@ -315,13 +315,13 @@
     <div id="touchButton">
       <div class="button-content">
         <div class="tap-icon">👆</div>
-        <div class="tap-text">TAP TO STACK</div>
+        <div class="tap-text">برای چیدن ضربه بزن</div>
         <div class="player-indicator" id="playerIndicator" style="display: none;"></div>
       </div>
     </div>
     <div id="statusText">
       <span class="loading-spinner"></span>
-      Connecting…
+      در حال اتصال…
     </div>
     <div id="logArea"></div>
   </div>
@@ -359,8 +359,8 @@
 
       if (!appIdParam || !roomParam) {
         statusText.innerHTML = `
-          <span class="status-error">❗ Invalid parameters</span><br>
-          <small>Use: ?appId=…&room=…</small>
+          <span class="status-error">❗ پارامترهای نامعتبر</span><br>
+          <small>استفاده کنید: ?appId=…&room=…</small>
         `;
         console.error("Missing URL params. Must include appId and room.");
         return;
@@ -375,7 +375,7 @@
 
         if (index !== null && index >= 0 && index <= 2) {
           container.classList.add(`player-${index}`);
-          playerIndicator.textContent = `Player ${index + 1}`;
+          playerIndicator.textContent = `بازیکن ${index + 1}`;
           playerIndicator.style.display = 'block';
         }
       }
@@ -421,7 +421,7 @@
 
         if (code === EV_CODE_ROOM_CLOSING) {
           logDebug("Received RoomClosing event → leaving room and disconnecting");
-          statusText.innerHTML = '<span class="status-warning">⚠️ Room closed by host</span>';
+          statusText.innerHTML = '<span class="status-warning">⚠️ اتاق توسط میزبان بسته شد</span>';
           touchDiv.style.pointerEvents = "none"; // disable taps
 
           if (client.isJoinedToRoom()) {
@@ -440,37 +440,37 @@
 
         switch (state) {
           case Photon.LoadBalancing.LoadBalancingClient.State.ConnectingToNameServer:
-            displayHTML = '<span class="loading-spinner"></span>Connecting to NameServer…';
+            displayHTML = '<span class="loading-spinner"></span>در حال اتصال به NameServer…';
             break;
           case Photon.LoadBalancing.LoadBalancingClient.State.ConnectedToNameServer:
-            displayHTML = '<span class="loading-spinner"></span>Connected to NameServer…';
+            displayHTML = '<span class="loading-spinner"></span>متصل به NameServer…';
             break;
           case Photon.LoadBalancing.LoadBalancingClient.State.ConnectingToMasterserver:
-            displayHTML = '<span class="loading-spinner"></span>Connecting to Master…';
+            displayHTML = '<span class="loading-spinner"></span>در حال اتصال به Master…';
             break;
           case Photon.LoadBalancing.LoadBalancingClient.State.ConnectedToMaster:
-            displayHTML = '<span class="loading-spinner"></span>Connected to Master…';
+            displayHTML = '<span class="loading-spinner"></span>متصل به Master…';
             break;
           case Photon.LoadBalancing.LoadBalancingClient.State.JoinedLobby:
-            displayHTML = '<span class="loading-spinner"></span>In Lobby. Joining Room…';
+            displayHTML = '<span class="loading-spinner"></span>در لابی. در حال پیوستن به اتاق…';
             break;
           case Photon.LoadBalancing.LoadBalancingClient.State.ConnectingToGameserver:
-            displayHTML = `<span class="loading-spinner"></span>Joining Room "${roomParam}"…`;
+            displayHTML = `<span class="loading-spinner"></span>در حال پیوستن به اتاق "${roomParam}"…`;
             break;
           case Photon.LoadBalancing.LoadBalancingClient.State.Joined:
             const actorNumber = client.myActor().actorNr;
             playerIndex = actorNumber - 1;
             updatePlayerStyling(playerIndex);
             displayHTML = `
-              <span class="status-connected">✅ Connected</span><br>
-              <small>Room: ${roomParam}</small>
+              <span class="status-connected">✅ متصل شد</span><br>
+              <small>اتاق: ${roomParam}</small>
             `;
             break;
           case Photon.LoadBalancing.LoadBalancingClient.State.Disconnected:
-            displayHTML = '<span class="status-error">❌ Disconnected</span>';
+            displayHTML = '<span class="status-error">❌ قطع شد</span>';
             break;
           case Photon.LoadBalancing.LoadBalancingClient.State.Error:
-            displayHTML = '<span class="status-error">❌ Error occurred</span>';
+            displayHTML = '<span class="status-error">❌ خطا رخ داد</span>';
             break;
           default:
             displayHTML = stateName || "Unknown State";
@@ -496,7 +496,7 @@
 
         if (!joinResult) {
           console.error("Failed to send join room request");
-          statusText.innerHTML = '<span class="status-error">❌ Failed to join room</span>';
+          statusText.innerHTML = '<span class="status-error">❌ عدم موفقیت در پیوستن به اتاق</span>';
         } else {
           logDebug("Join room request sent successfully");
         }
@@ -513,7 +513,7 @@
         const result = client.connectToRegionMaster(regionParam.toLowerCase());
         if (!result) {
           console.error("Failed to connect to region master");
-          statusText.innerHTML = `<span class="status-error">❌ Failed to connect to region ${regionParam}</span>`;
+          statusText.innerHTML = `<span class="status-error">❌ عدم موفقیت در اتصال به منطقه ${regionParam}</span>`;
         }
       };
 
@@ -540,8 +540,8 @@
           // Handle specific join room failures
           if (code === Photon.LoadBalancing.Constants.OperationCode.JoinGame) {
             statusText.innerHTML = `
-              <span class="status-error">❌ Failed to join "${roomParam}"</span><br>
-              <small>Error: ${errorMsg}</small>
+              <span class="status-error">❌ عدم موفقیت در پیوستن به "${roomParam}"</span><br>
+              <small>خطا: ${errorMsg}</small>
             `;
           }
         } else {
@@ -555,7 +555,7 @@
       client.onError = function (errorCode, errorMsg) {
         console.error("Photon Error:", errorCode, errorMsg);
         logDebug("Photon Error:", errorCode, errorMsg);
-        statusText.innerHTML = `<span class="status-error">⚠️ Photon Error: ${errorMsg}</span>`;
+        statusText.innerHTML = `<span class="status-error">⚠️ خطای Photon: ${errorMsg}</span>`;
       };
 
       //────────────────────────────────────────────────────────────────────────
@@ -568,7 +568,7 @@
 
       if (!connectResult) {
         console.error("Failed to start connection to NameServer");
-        statusText.innerHTML = '<span class="status-error">❌ Failed to start connection</span>';
+        statusText.innerHTML = '<span class="status-error">❌ عدم موفقیت در شروع اتصال</span>';
       }
 
       //────────────────────────────────────────────────────────────────────────
