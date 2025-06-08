@@ -113,15 +113,12 @@
           const timeSinceLastHeartbeat = Date.now() - lastHeartbeat;
 
           if (timeSinceLastHeartbeat > HEARTBEAT_TIMEOUT) {
-
-            if (client.isJoinedToRoom()) {
-              const exists = client.availableRooms().some(r => r.name === roomParam);
-              if (!exists)
-                // Force disconnect and attempt reconnection
-                if (client && !client.isJoinedToRoom())
-                  client.disconnect();
-
-            }
+            const exists = client.availableRooms().some(r => r.name === roomParam);
+            logDebug("Check If The Room Still Exist:", exists);
+            if (!exists)
+              // Force disconnect 
+              if (client && !client.isJoinedToRoom())
+                client.disconnect();
           }
         }, HEARTBEAT_INTERVAL);
       }
