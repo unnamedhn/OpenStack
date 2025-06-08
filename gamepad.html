@@ -113,21 +113,21 @@
           const timeSinceLastHeartbeat = Date.now() - lastHeartbeat;
 
           if (timeSinceLastHeartbeat > HEARTBEAT_TIMEOUT) {
-            logDebug("Heartbeat timeout detected - server likely disconnected");
-            statusText.textContent = "❌ Server disconnected";
+            // logDebug("Heartbeat timeout detected - server likely disconnected");
+            // statusText.textContent = "❌ Server disconnected";
 
             // Force disconnect and attempt reconnection
-            if (client && client.isJoinedToRoom()) {
+            if (client && !client.isJoinedToRoom()) {
               client.disconnect();
             }
 
             // Optional: Attempt to reconnect after a delay
-            setTimeout(() => {
-              if (statusText.textContent.includes("Server disconnected")) {
-                statusText.textContent = "🔄 Reconnecting...";
-                attemptReconnection();
-              }
-            }, 2000);
+            // setTimeout(() => {
+            //   if (statusText.textContent.includes("Server disconnected")) {
+            //     statusText.textContent = "🔄 Reconnecting...";
+            //     attemptReconnection();
+            //   }
+            // }, 2000);
           }
         }, HEARTBEAT_INTERVAL);
       }
