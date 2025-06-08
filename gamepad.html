@@ -118,24 +118,19 @@
       const params = new URLSearchParams(window.location.search);
       const appIdParam = params.get("appId");
       const roomParam = params.get("room");
-      const playerStr = params.get("player");
+      // const playerStr = params.get("player");
       const regionParam = params.get("region") || "eu";
       const statusText = document.getElementById("statusText");
       const touchDiv = document.getElementById("touchButton");
 
-      if (!appIdParam || !roomParam || playerStr === null) {
+      if (!appIdParam || !roomParam) {
         statusText.textContent =
-          "❗ Invalid parameters.\nUse: ?appId=…&room=…&player=0/1/2";
-        console.error("Missing or invalid URL params. Must include appId, room, player.");
+          "❗ Invalid parameters.\nUse: ?appId=…&room=…";
+        console.error("Missing URL params. Must include appId and room.");
         return;
       }
 
-      const playerIndex = parseInt(playerStr, 10);
-      if (isNaN(playerIndex) || playerIndex < 0) {
-        statusText.textContent = "❗  Invalid parameters.\nUse: ?appId=…&room=…&player=0/1/2&region=uae";
-        console.error("player query‐param is not a non‐negative integer:", playerStr);
-        return;
-      }
+      let playerIndex = null;
 
       //────────────────────────────────────────────────────────────────────────
       // 3) Instantiate LoadBalancingClient with secure WSS
@@ -195,7 +190,9 @@
             displayText = `Joining Room "${roomParam}"…`;
             break;
           case Photon.LoadBalancing.LoadBalancingClient.State.Joined:
-            displayText = `✅ Joined Room "${roomParam}"\nPLAYER ${playerIndex}`;
+            const actorNumber = client.myActor().actorNr;
+            playerIndex = actorNumber - 1;
+            displayText = `✅ Joined Room "${roomParam}"\nPLAYER ${playerIndex + 1}`;
             break;
           case Photon.LoadBalancing.LoadBalancingClient.State.Disconnected:
             displayText = "❌ Disconnected";
@@ -319,16 +316,18 @@
         }
         sendTap.lastTap = now;
 
-        // Ensure we send an integer (not a string or other type)
-        const playerData = parseInt(playerIndex, 10);
+        if (playerIndex === null) {
+          console.warn("Player index is not yet assigned. Skipping tap.");
+          return;
+        }
 
-        logDebug("Sending tap event with data:", playerData, "type:", typeof playerData);
+        logDebug("Sending tap event with data:", playerIndex, "type:", typeof playerIndex);
 
         try {
           // Use the correct raiseEvent API - the return value might not be reliable
           client.raiseEvent(
             1,           // eventCode
-            playerData,  // data - explicitly as integer
+            playerIndex,  // data - explicitly as integer
             {            // options
               receivers: Photon.LoadBalancing.Constants.ReceiverGroup.All,
               cache: Photon.LoadBalancing.Constants.EventCaching.DoNotCache
