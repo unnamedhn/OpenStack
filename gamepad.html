@@ -88,8 +88,8 @@
 
 <body>
   <div id="container">
-    <div id="statusText">Connecting…</div>
     <div id="touchButton">TAP TO STACK</div>
+    <div id="statusText">Connecting…</div>
     <div id="logArea"></div>
   </div>
 
@@ -229,7 +229,7 @@
       // Handle successful connection to NameServer
       client.onConnectedToNameServer = function () {
         logDebug(`Connected to NameServer, now connecting to region master '${regionParam}'`);
-        // Connect to EU region master server
+
         const result = client.connectToRegionMaster(regionParam.toLowerCase());
         if (!result) {
           console.error("Failed to connect to region master");
