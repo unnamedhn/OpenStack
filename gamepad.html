@@ -99,30 +99,17 @@
     (function () {
 
 
-      let heartbeatInterval;
-      let lastHeartbeat = Date.now();
-      const HEARTBEAT_TIMEOUT = 10000; // 10 seconds
-      const HEARTBEAT_INTERVAL = 3000; // 3 seconds
-
-      function startHeartbeatMonitoring() {
-        if (heartbeatInterval) {
-          clearInterval(heartbeatInterval);
-        }
-
-        heartbeatInterval = setInterval(() => {
-          const timeSinceLastHeartbeat = Date.now() - lastHeartbeat;
-
-          if (timeSinceLastHeartbeat > HEARTBEAT_TIMEOUT) {
-            const exists = client.availableRooms().some(r => r.name === roomParam);
-            logDebug("Check If The Room Still Exist:", exists);
-            if (!exists)
-              // Force disconnect 
-              if (client && !client.isJoinedToRoom())
-                client.disconnect();
+      const EV_CODE_ROOM_CLOSING = 128;
+      client.onEvent = function (eventData) {
+        if (eventData.Code === EV_CODE_ROOM_CLOSING) {
+          logDebug("Received RoomClosing event → leaving room and disconnecting");
+          statusText.textContent = "⚠️ Room closed by host";
+          if (client.isJoinedToRoom()) {
+            client.leaveRoom();
           }
-        }, HEARTBEAT_INTERVAL);
-      }
-
+          client.disconnect();
+        }
+      };
 
       //────────────────────────────────────────────────────────────────────────
       // 1) Simple logger: writes to console and (optionally) #logArea
@@ -206,8 +193,6 @@
             break;
           case Photon.LoadBalancing.LoadBalancingClient.State.Joined:
             displayText = `✅ Joined Room "${roomParam}"\nPLAYER ${playerIndex}`;
-            lastHeartbeat = Date.now(); // Reset heartbeat
-            startHeartbeatMonitoring(); // Start monitoring
             break;
           case Photon.LoadBalancing.LoadBalancingClient.State.Disconnected:
             displayText = "❌ Disconnected";
@@ -227,21 +212,6 @@
           attemptJoinRoom();
         }
       };
-
-      const originalOnEvent = client.onEvent;
-      client.onEvent = function (eventCode, data, actorNr) {
-        lastHeartbeat = Date.now(); // Reset heartbeat on any received event
-        if (originalOnEvent) {
-          originalOnEvent.call(this, eventCode, data, actorNr);
-        }
-      };
-
-      // Add cleanup when page unloads:
-      window.addEventListener('beforeunload', function () {
-        if (heartbeatInterval) {
-          clearInterval(heartbeatInterval);
-        }
-      });
 
       //────────────────────────────────────────────────────────────────────────
       // 5) Function to attempt joining room (called when in lobby)
