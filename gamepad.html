@@ -395,9 +395,9 @@
 
         touchDiv.appendChild(ripple);
 
-        setTimeout(() => {
+        ripple.addEventListener('animationend', () => {
           ripple.remove();
-        }, 600);
+        });
       }
 
       //────────────────────────────────────────────────────────────────────────
