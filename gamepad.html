@@ -192,7 +192,7 @@
           case Photon.LoadBalancing.LoadBalancingClient.State.Joined:
             const actorNumber = client.myActor().actorNr;
             playerIndex = actorNumber - 1;
-            displayText = `✅ Joined Room "${roomParam}"\nPLAYER ${playerIndex + 1}`;
+            displayText = `✅ Joined Room "${roomParam}"\nPLAYER ${playerIndex}`;
             break;
           case Photon.LoadBalancing.LoadBalancingClient.State.Disconnected:
             displayText = "❌ Disconnected";
