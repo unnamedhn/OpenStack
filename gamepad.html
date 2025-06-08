@@ -152,18 +152,21 @@
       }
 
       const EV_CODE_ROOM_CLOSING = 128;
-      client.onEvent = function (eventData) {
-        console.log(eventData)
-        if (eventData.Code === EV_CODE_ROOM_CLOSING) {
+
+      client.onEvent = function (code, content, actorNr) {
+        console.log("onEvent →", code, content, actorNr);
+
+        if (code === EV_CODE_ROOM_CLOSING) {
           logDebug("Received RoomClosing event → leaving room and disconnecting");
           statusText.textContent = "⚠️ Room closed by host";
+          touchDiv.style.pointerEvents = "none"; // disable taps
+
           if (client.isJoinedToRoom()) {
             client.leaveRoom();
           }
           client.disconnect();
         }
       };
-
 
       //────────────────────────────────────────────────────────────────────────
       // 4) onStateChange: update #statusText with a readable state
